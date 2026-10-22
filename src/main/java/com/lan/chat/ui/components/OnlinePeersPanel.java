@@ -53,7 +53,7 @@ public class OnlinePeersPanel extends JPanel {
         JPanel rightHeader = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         rightHeader.setOpaque(false);
 
-        JButton btnRescan = new JButton("🔄 Quét");
+        JButton btnRescan = new JButton("Quét lại");
         btnRescan.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         btnRescan.setBackground(new Color(241, 245, 249));
         btnRescan.setForeground(new Color(71, 85, 105));
@@ -66,7 +66,7 @@ public class OnlinePeersPanel extends JPanel {
             }
         });
 
-        JButton btnCreateRoom = new JButton("➕ Nhóm");
+        JButton btnCreateRoom = new JButton("+ Nhóm");
         btnCreateRoom.setFont(new Font("Segoe UI", Font.BOLD, 11));
         btnCreateRoom.setBackground(new Color(79, 70, 229));
         btnCreateRoom.setForeground(Color.WHITE);
