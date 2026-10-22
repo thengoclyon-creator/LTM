@@ -120,7 +120,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         lblRemote.setForeground(new Color(170, 170, 170));
 
         txtTargetIp = new JTextField(myIp, 10);
-        txtTargetPort = new JTextField("5000", 4);
+        txtTargetPort = new JTextField(String.valueOf(connectionManager.getListenPort() == 5000 ? 5001 : 5000), 4);
         txtTargetPort.setHorizontalAlignment(JTextField.CENTER);
 
         btnConnect = new JButton("🔗 Nối TCP");

@@ -174,14 +174,16 @@ public class ConnectionManager {
      */
     public void connectToPeer(String ip, int port) {
         // Prevent connecting to self
-        if (ip.equals(NetworkUtil.getPrimaryLocalIP()) && port == listenPort) {
+        if ((ip.equals(NetworkUtil.getPrimaryLocalIP()) || ip.equals("127.0.0.1") || ip.equalsIgnoreCase("localhost")) && port == listenPort) {
+            broadcastLog("Không thể tự kết nối tới chính mình (" + ip + ":" + port + ")! Vui lòng mở thêm 1 cửa sổ chat khác (hoặc máy khác) để kết nối.", true);
             return;
         }
 
         // Deduplicate: check if already connected to this peer
         for (PeerConnection conn : connectedPeers.values()) {
             if (conn.isConnected() && conn.getPeer().getIp().equals(ip) && conn.getPeer().getPort() == port) {
-                return; // Already connected!
+                broadcastLog("Đã có kết nối tới " + ip + ":" + port + " từ trước!", false);
+                return;
             }
         }
 
@@ -195,6 +197,7 @@ public class ConnectionManager {
                 PeerConnection conn = createPeerConnection(socket);
                 conn.start();
                 AudioNotifier.playConnectChime();
+                broadcastLog("Đã thiết lập socket TCP tới " + ip + ":" + port + ", đang hoàn tất bắt tay...", false);
 
             } catch (IOException e) {
                 broadcastLog("Không thể kết nối tới " + ip + ":" + port + ": " + e.getMessage(), true);
