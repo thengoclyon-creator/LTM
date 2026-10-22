@@ -115,6 +115,7 @@ public class PeerConnection {
                     case PacketType.PING -> handlePing();
                     case PacketType.PONG -> handlePong();
                     case PacketType.DISCONNECT -> handleDisconnectPacket();
+                    case PacketType.VOICE_NOTE -> handleVoiceNote();
 
                     // File Transfer Protocols
                     case PacketType.FILE_OFFER -> handleFileOffer();
@@ -184,6 +185,17 @@ public class PeerConnection {
         boolean isGroup = dis.readBoolean();
         String text = dis.readUTF();
         listener.onMessageReceived(peer, text, isEncrypted, isGroup);
+    }
+
+    private void handleVoiceNote() throws IOException {
+        boolean isGroup = dis.readBoolean();
+        int duration = dis.readInt();
+        String fileName = dis.readUTF();
+        int len = dis.readInt();
+        byte[] audioData = new byte[len];
+        dis.readFully(audioData);
+
+        listener.onVoiceNoteReceived(peer, fileName, duration, audioData, isGroup);
     }
 
     private void handlePing() throws IOException {
@@ -370,6 +382,25 @@ public class PeerConnection {
 
     public boolean sendTextMessage(String message, boolean isEncrypted) {
         return sendTextMessage(message, isEncrypted, true);
+    }
+
+    public boolean sendVoiceNote(String fileName, int durationSeconds, byte[] audioData, boolean isGroup) {
+        if (!isConnected() || audioData == null) return false;
+        try {
+            synchronized (sendLock) {
+                dos.writeInt(PacketType.VOICE_NOTE);
+                dos.writeBoolean(isGroup);
+                dos.writeInt(durationSeconds);
+                dos.writeUTF(fileName);
+                dos.writeInt(audioData.length);
+                dos.write(audioData);
+                dos.flush();
+            }
+            return true;
+        } catch (IOException e) {
+            listener.onStatusLog("Lỗi gửi tin nhắn thoại: " + e.getMessage(), true);
+            return false;
+        }
     }
 
     /**

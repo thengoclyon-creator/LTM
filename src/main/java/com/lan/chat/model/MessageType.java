@@ -5,5 +5,6 @@ public enum MessageType {
     SYSTEM_INFO,
     SYSTEM_WARNING,
     SYSTEM_ERROR,
-    FILE_TRANSFER
+    FILE_TRANSFER,
+    VOICE_NOTE
 }

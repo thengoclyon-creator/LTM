@@ -226,6 +226,14 @@ public class ConnectionManager {
             }
 
             @Override
+            public void onVoiceNoteReceived(Peer peer, String fileName, int durationSeconds, byte[] audioData, boolean isGroup) {
+                AudioNotifier.playMessageTing();
+                for (ConnectionListener l : listeners) {
+                    l.onVoiceNoteReceived(peer, fileName, durationSeconds, audioData, isGroup);
+                }
+            }
+
+            @Override
             public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {
                 AudioNotifier.playMessageTing();
                 for (ConnectionListener l : listeners) l.onFileOfferReceived(peer, fileId, fileName, totalSize);
@@ -349,6 +357,31 @@ public class ConnectionManager {
         }
 
         return conn.sendTextMessage(payload, encrypted, false);
+    }
+
+    public boolean broadcastVoiceNote(String fileName, int durationSeconds, byte[] audioData) {
+        if (connectedPeers.isEmpty()) {
+            broadcastLog("Chưa kết nối với thiết bị nào để gửi tin nhắn thoại!", true);
+            return false;
+        }
+        boolean any = false;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected()) {
+                if (conn.sendVoiceNote(fileName, durationSeconds, audioData, true)) {
+                    any = true;
+                }
+            }
+        }
+        return any;
+    }
+
+    public boolean sendPrivateVoiceNote(Peer peer, String fileName, int durationSeconds, byte[] audioData) {
+        PeerConnection conn = getPeerConnectionByPeer(peer);
+        if (conn == null || !conn.isConnected()) {
+            broadcastLog("Không có kết nối tới " + (peer != null ? peer.getNickname() : "đối phương"), true);
+            return false;
+        }
+        return conn.sendVoiceNote(fileName, durationSeconds, audioData, false);
     }
 
     /**

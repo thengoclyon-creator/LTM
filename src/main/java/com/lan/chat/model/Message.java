@@ -30,6 +30,10 @@ public class Message {
         return new Message(sender, content, MessageType.TEXT, isMine, isEncrypted);
     }
 
+    public static Message voiceNote(String sender, String fileName, int durationSeconds, boolean isMine) {
+        return new Message(sender, fileName + "|" + durationSeconds, MessageType.VOICE_NOTE, isMine, false);
+    }
+
     public static Message systemInfo(String text) {
         return new Message("Hệ thống", text, MessageType.SYSTEM_INFO, false, false);
     }

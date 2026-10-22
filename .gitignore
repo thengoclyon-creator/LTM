@@ -14,3 +14,8 @@ dependency-reduced-pom.xml
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Runtime data
+chat_history/
+voice_notes/
+

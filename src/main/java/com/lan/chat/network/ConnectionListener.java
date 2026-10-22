@@ -13,6 +13,7 @@ public interface ConnectionListener {
     void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize);
     void onFileProgress(FileTransferTask task);
     void onFileCompleted(FileTransferTask task, boolean success, String message);
+    default void onVoiceNoteReceived(Peer peer, String fileName, int durationSeconds, byte[] audioData, boolean isGroup) {}
     void onStatusLog(String message, boolean isError);
 
     // Phase 3: Voice Call Signaling Callbacks

@@ -13,6 +13,11 @@ public class ChatHistoryPanel extends JPanel {
     private final HTMLEditorKit editorKit;
     private final HTMLDocument document;
     private final JScrollPane scrollPane;
+    private java.util.function.Consumer<String> onAudioPlayRequested;
+
+    public void setOnAudioPlayRequested(java.util.function.Consumer<String> onAudioPlayRequested) {
+        this.onAudioPlayRequested = onAudioPlayRequested;
+    }
 
     public ChatHistoryPanel() {
         setLayout(new BorderLayout());
@@ -106,8 +111,43 @@ public class ChatHistoryPanel extends JPanel {
                 color: #DC2626;
                 font-weight: bold;
             }
+            .voice-play-me {
+                color: #FFFFFF;
+                background-color: #3730A3;
+                padding: 4px 10px;
+                border-radius: 6px;
+                text-decoration: none;
+                font-weight: bold;
+                font-size: 11px;
+                display: inline-block;
+                margin: 4px 0;
+            }
+            .voice-play-peer {
+                color: #1E293B;
+                background-color: #F1F5F9;
+                padding: 4px 10px;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                text-decoration: none;
+                font-weight: bold;
+                font-size: 11px;
+                display: inline-block;
+                margin: 4px 0;
+            }
         """;
         editorKit.getStyleSheet().addRule(css);
+
+        textPane.addHyperlinkListener(e -> {
+            if (e.getEventType() == javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) {
+                String desc = e.getDescription();
+                if (desc != null && desc.startsWith("play:")) {
+                    String file = desc.substring(5);
+                    if (onAudioPlayRequested != null) {
+                        onAudioPlayRequested.accept(file);
+                    }
+                }
+            }
+        });
 
         // Initial HTML skeleton
         try {
@@ -180,28 +220,50 @@ public class ChatHistoryPanel extends JPanel {
         String time = msg.getFormattedTime();
         String lockBadge = msg.isEncrypted() ? " [E2EE]" : "";
 
+        boolean isVoice = msg.getType() == com.lan.chat.model.MessageType.VOICE_NOTE;
+        String bodyHtml;
+        if (isVoice) {
+            String fileName = msg.getContent();
+            int duration = 0;
+            if (fileName.contains("|")) {
+                String[] parts = fileName.split("\\|");
+                fileName = parts[0];
+                try { duration = Integer.parseInt(parts[1]); } catch (Exception ignored) {}
+            }
+            String durStr = String.format("%02d:%02d", duration / 60, duration % 60);
+            if (msg.isMine()) {
+                bodyHtml = String.format("<a href='play:%s' class='voice-play-me'>🎙️ &#9658; Tin nhắn thoại (%s)</a>",
+                        escapeHtml(fileName), durStr);
+            } else {
+                bodyHtml = String.format("<a href='play:%s' class='voice-play-peer'>🎙️ &#9658; Tin nhắn thoại (%s)</a>",
+                        escapeHtml(fileName), durStr);
+            }
+        } else {
+            bodyHtml = String.format("<div>%s</div>", safeContent);
+        }
+
         if (msg.isMine()) {
             String myLabel = (msg.getSender() != null && !msg.getSender().isEmpty()) ? msg.getSender() : "Bạn";
             return String.format(
                     "<div class='msg-row-me'>" +
                     "  <div class='msg-bubble-me'>" +
                     "    <div class='sender-name-me'>%s</div>" +
-                    "    <div>%s</div>" +
+                    "    %s" +
                     "    <div class='msg-meta msg-meta-me'>%s%s</div>" +
                     "  </div>" +
                     "</div>",
-                    escapeHtml(myLabel), safeContent, time, lockBadge
+                    escapeHtml(myLabel), bodyHtml, time, lockBadge
             );
         } else {
             return String.format(
                     "<div class='msg-row-peer'>" +
                     "  <div class='msg-bubble-peer'>" +
                     "    <div class='sender-name'>%s</div>" +
-                    "    <div>%s</div>" +
+                    "    %s" +
                     "    <div class='msg-meta'>%s%s</div>" +
                     "  </div>" +
                     "</div>",
-                    escapeHtml(msg.getSender()), safeContent, time, lockBadge
+                    escapeHtml(msg.getSender()), bodyHtml, time, lockBadge
             );
         }
     }

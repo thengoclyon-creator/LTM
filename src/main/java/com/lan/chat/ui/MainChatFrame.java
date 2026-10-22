@@ -13,12 +13,15 @@ import com.lan.chat.util.AudioNotifier;
 import com.lan.chat.util.NetworkUtil;
 import com.lan.chat.storage.ChatStorageManager;
 import com.lan.chat.voice.VoiceCallService;
+import com.lan.chat.voice.VoicePlayer;
+import com.lan.chat.voice.VoiceRecorder;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.io.File;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,6 +56,14 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     private JButton btnMute;
     private JLabel lblCallBanner;
 
+    // Voice Note Service & Controls
+    private final VoiceRecorder voiceRecorder = new VoiceRecorder();
+    private final VoicePlayer voicePlayer = new VoicePlayer();
+    private static final String VOICE_DIR = "voice_notes";
+    private String currentlyPlayingAudio = null;
+    private JButton btnVoiceRecord;
+    private JButton btnCancelRecord;
+
     // Input Controls
     private JTextField txtMessageInput;
     private JButton btnSend;
@@ -86,6 +97,16 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         setLayout(new BorderLayout());
 
         getContentPane().setBackground(new Color(248, 250, 252));
+
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                if (voiceRecorder.isRecording()) {
+                    voiceRecorder.cancelRecording();
+                }
+                voicePlayer.stop();
+            }
+        });
     }
 
     private void initHeaderPanel() {
@@ -248,6 +269,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         subHeaderPanel.add(voiceActions, BorderLayout.EAST);
 
         chatHistoryPanel = new ChatHistoryPanel();
+        chatHistoryPanel.setOnAudioPlayRequested(this::handlePlayVoiceNote);
 
         // Upgraded FileTransferBar with Resume and Pause actions
         fileTransferBar = new FileTransferBar();
@@ -321,16 +343,47 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         inputRow.setOpaque(false);
         inputRow.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
 
-        btnSelectFile = new JButton("Chọn File");
+        btnSelectFile = new JButton("📁 File");
         btnSelectFile.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnSelectFile.setFocusPainted(false);
         btnSelectFile.setBackground(Color.WHITE);
         btnSelectFile.setForeground(new Color(51, 65, 85));
         btnSelectFile.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(203, 213, 225), 1, true),
-                BorderFactory.createEmptyBorder(6, 12, 6, 12)
+                BorderFactory.createEmptyBorder(6, 10, 6, 10)
         ));
         btnSelectFile.addActionListener(e -> chooseAndSendFile());
+
+        btnVoiceRecord = new JButton("🎙️ Thu âm");
+        btnVoiceRecord.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnVoiceRecord.setFocusPainted(false);
+        btnVoiceRecord.setBackground(Color.WHITE);
+        btnVoiceRecord.setForeground(new Color(67, 56, 202));
+        btnVoiceRecord.setToolTipText("Bấm để bắt đầu thu âm voice. Bấm lại để gửi.");
+        btnVoiceRecord.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(203, 213, 225), 1, true),
+                BorderFactory.createEmptyBorder(6, 10, 6, 10)
+        ));
+        btnVoiceRecord.addActionListener(e -> toggleVoiceRecording());
+
+        btnCancelRecord = new JButton("❌ Hủy");
+        btnCancelRecord.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        btnCancelRecord.setFocusPainted(false);
+        btnCancelRecord.setBackground(Color.WHITE);
+        btnCancelRecord.setForeground(new Color(220, 38, 38));
+        btnCancelRecord.setVisible(false);
+        btnCancelRecord.setToolTipText("Hủy bỏ bản ghi âm này");
+        btnCancelRecord.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(254, 202, 202), 1, true),
+                BorderFactory.createEmptyBorder(6, 8, 6, 8)
+        ));
+        btnCancelRecord.addActionListener(e -> cancelVoiceRecording());
+
+        JPanel leftActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        leftActions.setOpaque(false);
+        leftActions.add(btnSelectFile);
+        leftActions.add(btnVoiceRecord);
+        leftActions.add(btnCancelRecord);
 
         txtMessageInput = new JTextField();
         // Crucial: Use Segoe UI Emoji font so emojis don't display as tofu boxes!
@@ -359,7 +412,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         btnSend.setBorder(BorderFactory.createEmptyBorder(6, 16, 6, 16));
         btnSend.addActionListener(e -> sendMessage());
 
-        inputRow.add(btnSelectFile, BorderLayout.WEST);
+        inputRow.add(leftActions, BorderLayout.WEST);
         inputRow.add(txtMessageInput, BorderLayout.CENTER);
         inputRow.add(btnSend, BorderLayout.EAST);
 
@@ -781,6 +834,161 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     public void onCallHangup(Peer peer) {
         SwingUtilities.invokeLater(() -> {
             chatHistoryPanel.appendSystem("Đối phương đã gác máy.", false);
+        });
+    }
+
+    // ==========================================
+    // Voice Note Recording & Playback Actions
+    // ==========================================
+
+    private void toggleVoiceRecording() {
+        if (!voiceRecorder.isRecording()) {
+            boolean started = voiceRecorder.startRecording(seconds -> {
+                SwingUtilities.invokeLater(() -> {
+                    int m = seconds / 60;
+                    int s = seconds % 60;
+                    btnVoiceRecord.setText(String.format("⏹ Dừng & Gửi (%02d:%02d)", m, s));
+                });
+            });
+
+            if (started) {
+                btnVoiceRecord.setText("⏹ Dừng & Gửi (00:00)");
+                btnVoiceRecord.setBackground(new Color(220, 38, 38));
+                btnVoiceRecord.setForeground(Color.WHITE);
+                btnCancelRecord.setVisible(true);
+                txtMessageInput.setEnabled(false);
+                btnSelectFile.setEnabled(false);
+                chatHistoryPanel.appendSystem("🎙️ Đang ghi âm tin nhắn thoại... Bấm 'Dừng & Gửi' để gửi đi.", false);
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Không thể khởi động ghi âm microphone! Hãy kiểm tra cài đặt Micro của hệ điều hành.",
+                        "Lỗi Microphone", JOptionPane.ERROR_MESSAGE);
+            }
+        } else {
+            VoiceRecorder.RecordResult result = voiceRecorder.stopRecording();
+            resetVoiceRecordUi();
+
+            if (result == null || result.audioBytes() == null || result.audioBytes().length == 0) {
+                chatHistoryPanel.appendSystem("Tin nhắn thoại quá ngắn hoặc không có âm thanh.", false);
+                return;
+            }
+
+            sendVoiceNote(result);
+        }
+    }
+
+    private void cancelVoiceRecording() {
+        if (voiceRecorder.isRecording()) {
+            voiceRecorder.cancelRecording();
+            resetVoiceRecordUi();
+            chatHistoryPanel.appendSystem("Đã hủy bản ghi âm.", false);
+        }
+    }
+
+    private void resetVoiceRecordUi() {
+        btnVoiceRecord.setText("🎙️ Thu âm");
+        btnVoiceRecord.setBackground(Color.WHITE);
+        btnVoiceRecord.setForeground(new Color(67, 56, 202));
+        btnCancelRecord.setVisible(false);
+        txtMessageInput.setEnabled(true);
+        btnSelectFile.setEnabled(true);
+    }
+
+    private void sendVoiceNote(VoiceRecorder.RecordResult result) {
+        String fileName = result.file().getName();
+        int duration = result.durationSeconds();
+        byte[] audioBytes = result.audioBytes();
+
+        boolean sent;
+        String channelKey;
+        String myPrefix;
+
+        if (activeTargetPeer == null) {
+            sent = connectionManager.broadcastVoiceNote(fileName, duration, audioBytes);
+            channelKey = GROUP_CHANNEL;
+            myPrefix = "Bạn [Chung]";
+        } else {
+            sent = connectionManager.sendPrivateVoiceNote(activeTargetPeer, fileName, duration, audioBytes);
+            channelKey = getActiveChannelKey();
+            myPrefix = "Bạn [Chat riêng]";
+        }
+
+        if (sent) {
+            Message msg = Message.voiceNote(myPrefix, fileName, duration, true);
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
+            history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
+            }
+        } else {
+            chatHistoryPanel.appendSystem("Chưa thể gửi tin nhắn thoại! Hãy kiểm tra kết nối với thiết bị đối phương.", true);
+        }
+    }
+
+    private void handlePlayVoiceNote(String fileName) {
+        File dir = new File(VOICE_DIR);
+        File audioFile = new File(dir, fileName);
+        if (!audioFile.exists()) {
+            chatHistoryPanel.appendSystem("Không tìm thấy tệp ghi âm: " + fileName, true);
+            return;
+        }
+
+        if (voicePlayer.isPlaying() && fileName.equals(currentlyPlayingAudio)) {
+            voicePlayer.stop();
+            currentlyPlayingAudio = null;
+            chatHistoryPanel.appendSystem("Đã dừng phát âm thanh: " + fileName, false);
+            return;
+        }
+
+        currentlyPlayingAudio = fileName;
+        chatHistoryPanel.appendSystem("▶ Đang phát: " + fileName + "...", false);
+        voicePlayer.play(audioFile, () -> {
+            SwingUtilities.invokeLater(() -> {
+                if (fileName.equals(currentlyPlayingAudio)) {
+                    currentlyPlayingAudio = null;
+                }
+            });
+        });
+    }
+
+    @Override
+    public void onVoiceNoteReceived(Peer peer, String fileName, int durationSeconds, byte[] audioData, boolean isGroup) {
+        SwingUtilities.invokeLater(() -> {
+            // Save received WAV bytes to local disk in voice_notes/
+            try {
+                File dir = new File(VOICE_DIR);
+                if (!dir.exists()) dir.mkdirs();
+                File targetFile = new File(dir, fileName);
+                Files.write(targetFile.toPath(), audioData);
+            } catch (Exception e) {
+                System.err.println("Lỗi lưu file voice note nhận được: " + e.getMessage());
+            }
+
+            String channelKey;
+            Message msg;
+
+            if (isGroup) {
+                channelKey = GROUP_CHANNEL;
+                msg = Message.voiceNote(peer.getNickname() + " [Chung]", fileName, durationSeconds, false);
+            } else {
+                channelKey = getChannelKeyForPeer(peer);
+                msg = Message.voiceNote(peer.getNickname() + " [Chat riêng]", fileName, durationSeconds, false);
+            }
+
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
+            history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
+            } else {
+                if (!isGroup) {
+                    peer.incrementUnread();
+                    peersPanel.refreshList();
+                }
+            }
         });
     }
 }
