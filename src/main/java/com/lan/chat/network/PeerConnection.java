@@ -142,6 +142,7 @@ public class PeerConnection {
                     case PacketType.ROOM_MEMBER_UPDATE -> handleRoomMemberUpdate();
                     case PacketType.ROOM_CHAT_TEXT -> handleRoomChatText();
                     case PacketType.ROOM_VOICE_NOTE -> handleRoomVoiceNote();
+                    case PacketType.ROOM_LEAVE -> handleRoomLeave();
 
                     default -> listener.onStatusLog("Nhận packet type lạ: " + packetType, false);
                 }
@@ -424,6 +425,12 @@ public class PeerConnection {
         listener.onRoomVoiceNoteReceived(roomId, senderNickname, fileName, duration, audioData);
     }
 
+    private void handleRoomLeave() throws IOException {
+        String roomId = dis.readUTF();
+        String leaverNickname = dis.readUTF();
+        listener.onRoomMemberLeft(roomId, leaverNickname);
+    }
+
     // ==========================================
     // Public Sending & Action API
     // ==========================================
@@ -548,6 +555,21 @@ public class PeerConnection {
                 dos.writeUTF(fileName);
                 dos.writeInt(audioData.length);
                 dos.write(audioData);
+                dos.flush();
+            }
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public boolean sendRoomLeave(String roomId, String leaverNickname) {
+        if (!isConnected()) return false;
+        try {
+            synchronized (sendLock) {
+                dos.writeInt(PacketType.ROOM_LEAVE);
+                dos.writeUTF(roomId);
+                dos.writeUTF(leaverNickname);
                 dos.flush();
             }
             return true;

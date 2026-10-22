@@ -314,6 +314,11 @@ public class ConnectionManager {
             }
 
             @Override
+            public void onRoomMemberLeft(String roomId, String memberNickname) {
+                for (ConnectionListener l : listeners) l.onRoomMemberLeft(roomId, memberNickname);
+            }
+
+            @Override
             public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {
                 AudioNotifier.playMessageTing();
                 for (ConnectionListener l : listeners) l.onFileOfferReceived(peer, fileId, fileName, totalSize);
@@ -543,6 +548,15 @@ public class ConnectionManager {
         for (PeerConnection conn : connectedPeers.values()) {
             if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
                 conn.sendRoomMemberUpdate(room.getId(), room.getMembers(), nickname);
+            }
+        }
+    }
+
+    public void broadcastRoomLeave(ChatRoom room) {
+        if (room == null) return;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
+                conn.sendRoomLeave(room.getId(), nickname);
             }
         }
     }

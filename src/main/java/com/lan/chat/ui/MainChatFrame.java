@@ -55,6 +55,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     private JLabel lblActivePeerStatus;
     private JButton btnRenameRoom;
     private JButton btnManageMembers;
+    private JButton btnLeaveRoom;
 
     public Peer getActivePeer() {
         return activeTarget != null && activeTarget.isPeer() ? activeTarget.getPeer() : null;
@@ -222,6 +223,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             txtTargetPort.setText(String.valueOf(peer.getPort()));
             connectToTarget();
         });
+        peersPanel.setOnLeaveRoomRequested(this::confirmAndLeaveRoomFor);
 
         // Chat Container
         JPanel chatContainer = new JPanel(new BorderLayout());
@@ -261,6 +263,15 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         btnManageMembers.setVisible(false);
         btnManageMembers.addActionListener(e -> showManageMembersDialog());
 
+        btnLeaveRoom = new JButton("🚪 Thoát nhóm");
+        btnLeaveRoom.setToolTipText("Rời khỏi nhóm trò chuyện này");
+        btnLeaveRoom.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnLeaveRoom.setBackground(new Color(254, 242, 242));
+        btnLeaveRoom.setForeground(new Color(220, 38, 38));
+        btnLeaveRoom.setFocusPainted(false);
+        btnLeaveRoom.setVisible(false);
+        btnLeaveRoom.addActionListener(e -> confirmAndLeaveActiveRoom());
+
         lblCallBanner = new JLabel("");
         lblCallBanner.setFont(new Font("Segoe UI", Font.BOLD, 11));
         lblCallBanner.setForeground(new Color(5, 150, 105));
@@ -298,6 +309,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
         voiceActions.add(btnRenameRoom);
         voiceActions.add(btnManageMembers);
+        voiceActions.add(btnLeaveRoom);
         voiceActions.add(btnClearHistory);
         voiceActions.add(lblCallBanner);
         voiceActions.add(btnCall);
@@ -613,6 +625,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             btnCall.setVisible(false);
             btnRenameRoom.setVisible(false);
             btnManageMembers.setVisible(false);
+            btnLeaveRoom.setVisible(false);
         } else if (activeTarget.isRoom()) {
             ChatRoom r = activeTarget.getRoom();
             lblActivePeerStatus.setText("NHÓM: " + r.getName() + " • " + r.getMembers().size() + " thành viên (" + r.getMembersSummary() + ")");
@@ -621,6 +634,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             btnRenameRoom.setVisible(true);
             btnManageMembers.setVisible(true);
             btnManageMembers.setText("👥 Thành viên (" + r.getMembers().size() + ")");
+            btnLeaveRoom.setVisible(true);
         } else {
             Peer p = activeTarget.getPeer();
             String connStatus;
@@ -636,6 +650,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             btnCall.setVisible(true);
             btnRenameRoom.setVisible(false);
             btnManageMembers.setVisible(false);
+            btnLeaveRoom.setVisible(false);
         }
     }
 
@@ -1108,6 +1123,50 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         }
     }
 
+    private void confirmAndLeaveActiveRoom() {
+        ChatRoom room = getActiveRoom();
+        if (room != null) {
+            confirmAndLeaveRoomFor(room);
+        }
+    }
+
+    private void confirmAndLeaveRoomFor(ChatRoom room) {
+        if (room == null) return;
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Bạn có chắc chắn muốn rời khỏi nhóm '" + room.getName() + "' không?\n" +
+                "Sau khi rời, bạn sẽ không nhận được tin nhắn từ nhóm này nữa.",
+                "Xác nhận thoát nhóm",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE
+        );
+
+        if (choice == JOptionPane.YES_OPTION) {
+            leaveRoom(room);
+        }
+    }
+
+    private void leaveRoom(ChatRoom room) {
+        if (room == null) return;
+        String roomId = room.getId();
+        String roomName = room.getName();
+
+        // 1. Broadcast leave notification to other connected peers in this room
+        connectionManager.broadcastRoomLeave(room);
+
+        // 2. Remove room from local storage & sidebar
+        chatStorageManager.deleteRoom(roomId);
+        peersPanel.removeRoom(roomId);
+
+        // 3. If currently viewing this room, switch to All LAN General room
+        if (activeTarget != null && activeTarget.isRoom() && activeTarget.getRoom().getId().equals(roomId)) {
+            switchChatTarget(ChatTarget.allLan());
+            peersPanel.selectTarget(ChatTarget.allLan());
+        }
+
+        chatHistoryPanel.appendSystem("🚪 Bạn đã rời khỏi nhóm '" + roomName + "'.", false);
+    }
+
     // ==========================================
     // Phase 5: Room Event Callbacks
     // ==========================================
@@ -1173,11 +1232,51 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             }
             if (targetRoom != null) {
                 targetRoom.setMembers(newMembers);
+                boolean stillMember = targetRoom.hasMember(connectionManager.getNickname());
+                if (!stillMember) {
+                    chatStorageManager.deleteRoom(roomId);
+                    peersPanel.removeRoom(roomId);
+                    if (activeTarget != null && activeTarget.isRoom() && activeTarget.getRoom().getId().equals(roomId)) {
+                        switchChatTarget(ChatTarget.allLan());
+                        peersPanel.selectTarget(ChatTarget.allLan());
+                    }
+                    chatHistoryPanel.appendSystem("Bạn đã được đưa ra khỏi nhóm '" + targetRoom.getName() + "' bởi " + updatedBy + ".", true);
+                    return;
+                }
+
                 chatStorageManager.saveOrUpdateRoom(targetRoom);
                 peersPanel.addOrUpdateRoom(targetRoom);
 
                 String channelKey = "ROOM_" + roomId;
                 Message sysMsg = Message.systemInfo("👥 " + updatedBy + " đã cập nhật thành viên nhóm: " + targetRoom.getMembersSummary());
+                conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey))).add(sysMsg);
+                chatStorageManager.appendMessage(channelKey, sysMsg);
+
+                if (getActiveChannelKey().equals(channelKey)) {
+                    updateChatTargetBanner();
+                    chatHistoryPanel.appendMessage(sysMsg);
+                }
+            }
+        });
+    }
+
+    @Override
+    public void onRoomMemberLeft(String roomId, String memberNickname) {
+        SwingUtilities.invokeLater(() -> {
+            ChatRoom targetRoom = null;
+            for (ChatRoom r : chatStorageManager.loadRooms()) {
+                if (r.getId().equals(roomId)) {
+                    targetRoom = r;
+                    break;
+                }
+            }
+            if (targetRoom != null) {
+                targetRoom.removeMember(memberNickname);
+                chatStorageManager.saveOrUpdateRoom(targetRoom);
+                peersPanel.addOrUpdateRoom(targetRoom);
+
+                String channelKey = "ROOM_" + roomId;
+                Message sysMsg = Message.systemInfo("🚪 " + memberNickname + " đã rời khỏi nhóm.");
                 conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey))).add(sysMsg);
                 chatStorageManager.appendMessage(channelKey, sysMsg);
 

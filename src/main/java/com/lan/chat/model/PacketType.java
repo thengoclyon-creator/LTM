@@ -37,4 +37,5 @@ public class PacketType {
     public static final int ROOM_MEMBER_UPDATE = 402;  // roomId, members, updatedBy
     public static final int ROOM_CHAT_TEXT = 403;      // roomId, isEncrypted, senderNickname, text
     public static final int ROOM_VOICE_NOTE = 404;     // roomId, senderNickname, duration, fileName, audioBytes
+    public static final int ROOM_LEAVE = 405;          // roomId, leaverNickname
 }

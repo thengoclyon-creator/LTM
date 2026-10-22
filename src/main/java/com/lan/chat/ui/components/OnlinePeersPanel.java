@@ -20,6 +20,7 @@ public class OnlinePeersPanel extends JPanel {
     private Consumer<Peer> onPeerConnectRequest;
     private Runnable onCreateRoomRequested;
     private Runnable onRescanRequested;
+    private Consumer<ChatRoom> onLeaveRoomRequested;
 
     private final JLabel lblPeerCount = new JLabel("(0 online)");
 
@@ -104,6 +105,18 @@ public class OnlinePeersPanel extends JPanel {
             }
         });
 
+        JPopupMenu roomPopupMenu = new JPopupMenu();
+        JMenuItem itemLeaveRoom = new JMenuItem("🚪 Thoát nhóm");
+        itemLeaveRoom.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        itemLeaveRoom.setForeground(new Color(220, 38, 38));
+        itemLeaveRoom.addActionListener(e -> {
+            ChatTarget selected = targetJList.getSelectedValue();
+            if (selected != null && selected.isRoom() && onLeaveRoomRequested != null) {
+                onLeaveRoomRequested.accept(selected.getRoom());
+            }
+        });
+        roomPopupMenu.add(itemLeaveRoom);
+
         targetJList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -111,6 +124,29 @@ public class OnlinePeersPanel extends JPanel {
                     ChatTarget selected = targetJList.getSelectedValue();
                     if (selected != null && selected.isPeer() && onPeerConnectRequest != null) {
                         onPeerConnectRequest.accept(selected.getPeer());
+                    }
+                }
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                handleContextMenu(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                handleContextMenu(e);
+            }
+
+            private void handleContextMenu(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    int index = targetJList.locationToIndex(e.getPoint());
+                    if (index >= 0) {
+                        targetJList.setSelectedIndex(index);
+                        ChatTarget selected = listModel.get(index);
+                        if (selected != null && selected.isRoom()) {
+                            roomPopupMenu.show(targetJList, e.getX(), e.getY());
+                        }
                     }
                 }
             }
@@ -156,6 +192,10 @@ public class OnlinePeersPanel extends JPanel {
 
     public void setOnRescanRequested(Runnable onRescanRequested) {
         this.onRescanRequested = onRescanRequested;
+    }
+
+    public void setOnLeaveRoomRequested(Consumer<ChatRoom> onLeaveRoomRequested) {
+        this.onLeaveRoomRequested = onLeaveRoomRequested;
     }
 
     public ChatTarget getSelectedTarget() {

@@ -29,4 +29,5 @@ public interface ConnectionListener {
     default void onRoomMembersUpdated(String roomId, java.util.List<String> newMembers, String updatedBy) {}
     default void onRoomMessageReceived(String roomId, String senderNickname, String text, boolean isEncrypted) {}
     default void onRoomVoiceNoteReceived(String roomId, String senderNickname, String fileName, int durationSeconds, byte[] audioData) {}
+    default void onRoomMemberLeft(String roomId, String memberNickname) {}
 }
