@@ -119,7 +119,8 @@ public class OnlinePeersPanel extends JPanel {
             int index = -1;
             for (int i = 1; i < listModel.size(); i++) { // Skip group chat item at 0
                 Peer p = listModel.get(i);
-                if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
+                if ((p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort())
+                        || (p.getNickname().equalsIgnoreCase(peer.getNickname()))) {
                     index = i;
                     break;
                 }
@@ -137,7 +138,8 @@ public class OnlinePeersPanel extends JPanel {
         SwingUtilities.invokeLater(() -> {
             for (int i = 1; i < listModel.size(); i++) {
                 Peer p = listModel.get(i);
-                if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
+                if ((p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort())
+                        || (p.getNickname().equalsIgnoreCase(peer.getNickname()))) {
                     listModel.remove(i);
                     break;
                 }
@@ -147,8 +149,14 @@ public class OnlinePeersPanel extends JPanel {
     }
 
     private void updateCountLabel() {
-        int count = Math.max(0, listModel.size() - 1);
-        lblPeerCount.setText("(" + count + " thiết bị)");
+        int onlineCount = 0;
+        for (int i = 1; i < listModel.size(); i++) {
+            Peer p = listModel.get(i);
+            if (p.isConnected() || p.isOnline()) {
+                onlineCount++;
+            }
+        }
+        lblPeerCount.setText("(" + onlineCount + " online)");
     }
 
     public void refreshList() {

@@ -12,14 +12,18 @@ public class Message {
     private final boolean isMine;
     private final boolean isEncrypted;
 
-    public Message(String sender, String content, MessageType type, boolean isMine, boolean isEncrypted) {
-        this.id = System.currentTimeMillis() + "_" + Math.random();
+    public Message(String id, String sender, String content, long timestamp, MessageType type, boolean isMine, boolean isEncrypted) {
+        this.id = (id == null || id.isEmpty()) ? (System.currentTimeMillis() + "_" + Math.random()) : id;
         this.sender = sender;
         this.content = content;
-        this.timestamp = System.currentTimeMillis();
-        this.type = type;
+        this.timestamp = timestamp > 0 ? timestamp : System.currentTimeMillis();
+        this.type = type != null ? type : MessageType.TEXT;
         this.isMine = isMine;
         this.isEncrypted = isEncrypted;
+    }
+
+    public Message(String sender, String content, MessageType type, boolean isMine, boolean isEncrypted) {
+        this(null, sender, content, System.currentTimeMillis(), type, isMine, isEncrypted);
     }
 
     public static Message userText(String sender, String content, boolean isMine, boolean isEncrypted) {
@@ -43,6 +47,13 @@ public class Message {
     public boolean isEncrypted() { return isEncrypted; }
 
     public String getFormattedTime() {
-        return new SimpleDateFormat("HH:mm:ss").format(new Date(timestamp));
+        SimpleDateFormat dayFmt = new SimpleDateFormat("yyyyMMdd");
+        String msgDay = dayFmt.format(new Date(timestamp));
+        String today = dayFmt.format(new Date());
+        if (msgDay.equals(today)) {
+            return new SimpleDateFormat("HH:mm:ss").format(new Date(timestamp));
+        } else {
+            return new SimpleDateFormat("dd/MM HH:mm").format(new Date(timestamp));
+        }
     }
 }

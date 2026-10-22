@@ -11,6 +11,7 @@ import com.lan.chat.ui.components.FileTransferBar;
 import com.lan.chat.ui.components.OnlinePeersPanel;
 import com.lan.chat.util.AudioNotifier;
 import com.lan.chat.util.NetworkUtil;
+import com.lan.chat.storage.ChatStorageManager;
 import com.lan.chat.voice.VoiceCallService;
 
 import javax.swing.*;
@@ -26,6 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class MainChatFrame extends JFrame implements ConnectionListener {
 
     private final ConnectionManager connectionManager;
+    private final ChatStorageManager chatStorageManager;
     private Peer activeTargetPeer = null; // null = Broadcast to all (Group Chat)
     private static final String GROUP_CHANNEL = "GROUP";
     private final Map<String, List<Message>> conversationHistories = new ConcurrentHashMap<>();
@@ -59,12 +61,15 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     public MainChatFrame(ConnectionManager connectionManager) {
         this.connectionManager = connectionManager;
         this.connectionManager.addListener(this);
+        this.chatStorageManager = new ChatStorageManager(connectionManager.getNickname());
 
         initWindow();
         initHeaderPanel();
         initCenterPanel();
         initInputPanel();
         initVoiceCallbacks();
+
+        loadSavedHistories();
 
         refreshCurrentConversationView();
 
@@ -225,6 +230,15 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         btnMute.setVisible(false);
         btnMute.addActionListener(e -> toggleMute());
 
+        JButton btnClearHistory = new JButton("Xóa lịch sử");
+        btnClearHistory.setToolTipText("Xóa lịch sử tin nhắn của cuộc trò chuyện này");
+        btnClearHistory.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnClearHistory.setBackground(new Color(241, 245, 249));
+        btnClearHistory.setForeground(new Color(100, 116, 139));
+        btnClearHistory.setFocusPainted(false);
+        btnClearHistory.addActionListener(e -> clearCurrentConversation());
+
+        voiceActions.add(btnClearHistory);
         voiceActions.add(lblCallBanner);
         voiceActions.add(btnCall);
         voiceActions.add(btnMute);
@@ -402,8 +416,57 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         btnMute.setForeground(newMuted ? new Color(220, 38, 38) : null);
     }
 
+    private void loadSavedHistories() {
+        // 1. Preload Group Chat messages
+        List<Message> groupMsgs = chatStorageManager.loadMessages(GROUP_CHANNEL);
+        conversationHistories.put(GROUP_CHANNEL, new CopyOnWriteArrayList<>(groupMsgs));
+
+        // 2. Preload past peer conversations (Zalo/Messenger style)
+        List<String> savedPeers = chatStorageManager.getSavedPeerKeys();
+        for (String peerName : savedPeers) {
+            String channelKey = "PEER_" + peerName;
+            List<Message> msgs = chatStorageManager.loadMessages(channelKey);
+            conversationHistories.put(channelKey, new CopyOnWriteArrayList<>(msgs));
+
+            // Add peer to sidebar as offline/recent contact
+            Peer recentPeer = new Peer("0.0.0.0", 0, peerName);
+            recentPeer.setOnline(false);
+            recentPeer.setConnected(false);
+            peersPanel.addOrUpdatePeer(recentPeer);
+        }
+    }
+
+    private String getChannelKeyForPeer(Peer peer) {
+        if (peer == null) return GROUP_CHANNEL;
+        String name = peer.getNickname();
+        if (name == null || name.trim().isEmpty() || name.equals(peer.getIp() + ":" + peer.getPort())) {
+            return "PEER_" + ChatStorageManager.sanitizeFileName(peer.getAddressKey());
+        }
+        return "PEER_" + ChatStorageManager.sanitizeFileName(name);
+    }
+
     private String getActiveChannelKey() {
-        return activeTargetPeer == null ? GROUP_CHANNEL : activeTargetPeer.getAddressKey();
+        return getChannelKeyForPeer(activeTargetPeer);
+    }
+
+    private void clearCurrentConversation() {
+        String targetName = activeTargetPeer == null ? "Phòng Chat Chung" : activeTargetPeer.getNickname();
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Bạn có chắc chắn muốn xóa toàn bộ lịch sử tin nhắn với " + targetName + "?",
+                "Xác nhận xóa lịch sử",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice == JOptionPane.YES_OPTION) {
+            String channelKey = getActiveChannelKey();
+            List<Message> history = conversationHistories.get(channelKey);
+            if (history != null) {
+                history.clear();
+            }
+            chatStorageManager.clearHistory(channelKey);
+            refreshCurrentConversationView();
+        }
     }
 
     private void switchChatTarget(Peer peer) {
@@ -423,7 +486,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
     private void refreshCurrentConversationView() {
         String channelKey = getActiveChannelKey();
-        List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>());
+        List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
         String notice;
         if (activeTargetPeer == null) {
             notice = "📢 PHÒNG CHAT CHUNG LAN: Gửi tin tới tất cả thiết bị đang online.";
@@ -438,7 +501,14 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             lblActivePeerStatus.setText("PHÒNG CHAT CHUNG - Gửi tin tới tất cả thiết bị LAN");
             lblActivePeerStatus.setForeground(new Color(15, 23, 42));
         } else {
-            String connStatus = activeTargetPeer.isConnected() ? "Đã nối trực tiếp 1-1" : "Đang kết nối...";
+            String connStatus;
+            if (activeTargetPeer.isConnected()) {
+                connStatus = "Đã nối trực tiếp 1-1";
+            } else if (activeTargetPeer.isOnline()) {
+                connStatus = "Đang kết nối...";
+            } else {
+                connStatus = "Ngoại tuyến (Offline)";
+            }
             lblActivePeerStatus.setText("CHAT RIÊNG: " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getAddressKey() + ") • " + connStatus);
             lblActivePeerStatus.setForeground(new Color(67, 56, 202));
         }
@@ -511,14 +581,15 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         } else {
             // Private Chat: Send to specific target peer
             sent = connectionManager.sendPrivateMessage(activeTargetPeer, text);
-            channelKey = activeTargetPeer.getAddressKey();
+            channelKey = getActiveChannelKey();
             myPrefix = "Bạn [Chat riêng]";
         }
 
         if (sent) {
             Message msg = Message.userText(myPrefix, text, true, connectionManager.isE2eeEnabled());
-            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>());
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
             history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
 
             if (getActiveChannelKey().equals(channelKey)) {
                 chatHistoryPanel.appendMessage(msg);
@@ -614,12 +685,13 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
                 channelKey = GROUP_CHANNEL;
                 msg = Message.userText(peer.getNickname() + " [Chung]", text, false, isEncrypted);
             } else {
-                channelKey = peer.getAddressKey();
+                channelKey = getChannelKeyForPeer(peer);
                 msg = Message.userText(peer.getNickname() + " [Chat riêng]", text, false, isEncrypted);
             }
 
-            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>());
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
             history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
 
             if (getActiveChannelKey().equals(channelKey)) {
                 chatHistoryPanel.appendMessage(msg);
