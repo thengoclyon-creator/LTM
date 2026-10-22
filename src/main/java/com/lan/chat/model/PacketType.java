@@ -13,6 +13,7 @@ public class PacketType {
     public static final int PING = 103;             // Keepalive ping
     public static final int PONG = 104;             // Keepalive pong
     public static final int DISCONNECT = 105;       // Graceful disconnect notify
+    public static final int CHAT_PRIVATE = 106;     // Private 1-1 text message
 
     // Phase 2: High-Performance Resumable Chunked File Transfer
     public static final int FILE_OFFER = 200;       // fileId, fileName, totalSize, checksum

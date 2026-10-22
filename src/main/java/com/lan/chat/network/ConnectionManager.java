@@ -221,6 +221,20 @@ public class ConnectionManager {
             }
 
             @Override
+            public void onPrivateMessageReceived(Peer peer, String text, boolean isEncrypted) {
+                String plainText = text;
+                if (isEncrypted) {
+                    try {
+                        plainText = SecurityUtil.decrypt(text);
+                    } catch (Exception e) {
+                        plainText = "[Không thể giải mã tin nhắn: " + e.getMessage() + "]";
+                    }
+                }
+                AudioNotifier.playMessageTing();
+                for (ConnectionListener l : listeners) l.onPrivateMessageReceived(peer, plainText, isEncrypted);
+            }
+
+            @Override
             public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {
                 AudioNotifier.playMessageTing();
                 for (ConnectionListener l : listeners) l.onFileOfferReceived(peer, fileId, fileName, totalSize);
@@ -337,7 +351,7 @@ public class ConnectionManager {
             } catch (Exception ignored) {}
         }
 
-        return conn.sendTextMessage(payload, encrypted);
+        return conn.sendTextMessage(payload, encrypted, true);
     }
 
     /**

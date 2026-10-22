@@ -35,7 +35,14 @@
 ### 4. 👥 Chat Đa Người Dùng (Multi-Peer / Group Chat & Mesh Network)
 - **Phòng Chat Chung (All LAN):** Bất kỳ ai nhắn tin vào kênh chung, tin nhắn sẽ được gửi đồng thời tới toàn bộ các máy đang kết nối trong mạng LAN.
 - **Chat Riêng 1-1:** Nhấp chọn một người dùng cụ thể trên danh sách bên trái để mở phiên nhắn tin riêng tư hoặc thực hiện cuộc gọi thoại trực tiếp.
-- **Mã hóa E2EE (AES-GCM):** Mã hóa toàn bộ nội dung tin nhắn trước khi truyền qua mạng LAN.
+### 5. 📜 Hệ Thống Lịch Sử Chat Thông Minh (Chat History & Export)
+- **Lưu trữ tự động & Độc lập theo phòng (Persistent History):** Toàn bộ tin nhắn được lưu trữ tự động vào thư mục `chat_history/`, phân tách rõ ràng giữa **Phòng Chat Chung** và **Chat Riêng 1-1** với từng thiết bị.
+- **Tự động phục hồi tin nhắn:** Khi khởi động lại ứng dụng hoặc chuyển đổi qua lại giữa các bạn chat trên danh sách, toàn bộ lịch sử trò chuyện tương ứng sẽ được tự động nạp lại lên màn hình.
+- **Hộp thoại Quản lý Lịch sử Hiện đại (`ChatHistoryDialog`):**
+  - Nút **`📜 Lịch sử`**: Mở cửa sổ tra cứu toàn diện các cuộc trò chuyện.
+  - **Tìm kiếm từ khóa (`Search`):** Tìm kiếm tức thì nội dung tin nhắn theo từ khóa với hiệu ứng đánh dấu nổi bật từ khóa tìm được.
+  - **Xuất báo cáo (`Export HTML & TXT`):** Hỗ trợ xuất lịch sử cuộc trò chuyện ra file **HTML** (giao diện bong bóng chat trực quan, chuyên nghiệp, sẵn sàng nộp báo cáo đồ án) hoặc file văn bản **TXT**.
+  - **Xóa lịch sử an toàn:** Xóa sạch dữ liệu lịch sử của cuộc hội thoại khi cần thiết.
 
 ---
 
@@ -46,14 +53,17 @@ LTM/
 ├── run.bat                          // Chạy 1 ứng dụng
 ├── run-two-instances.bat            // Mở 2 máy chat cục bộ (May_A & May_B)
 ├── run-three-instances.bat          // Mở 3 máy chat chung (May_A, May_B, May_C)
+├── push-branch-khuong.bat           // Đồng bộ nhanh nhánh Khuong lên GitHub
 ├── pom.xml                          // Cấu hình Maven & đóng gói Uber JAR
 └── src\
     ├── main\java\com\lan\chat\
     │   ├── Main.java                // Điểm khởi chạy chính
+    │   ├── history\
+    │   │   └── ChatHistoryManager.java // Quản lý lưu trữ, truy vấn, tìm kiếm và xuất lịch sử
     │   ├── model\
-    │   │   ├── Message.java         // Model tin nhắn
+    │   │   ├── Message.java         // Model tin nhắn (ID, Thời gian, Người gửi, Nội dung, E2EE)
     │   │   ├── Peer.java            // Model thiết bị (IP, Port, VoicePort, AutoDiscovered)
-    │   │   ├── PacketType.java      // Mã giao thức mạng (File Resume, Call Signaling)
+    │   │   ├── PacketType.java      // Mã giao thức mạng (File Resume, Call, Private Chat)
     │   │   └── FileTransferTask.java// Quản lý truyền file, offset, .part, .meta, ETA
     │   ├── network\
     │   │   ├── TcpServer.java       // ServerSocket lắng nghe đa kết nối
@@ -65,8 +75,9 @@ LTM/
     │   │   └── VoiceCallService.java// Dịch vụ gọi thoại UDP (TargetDataLine & SourceDataLine)
     │   ├── ui\
     │   │   ├── MainChatFrame.java   // Giao diện Swing chính với thanh Voice Call & Group Chat
+    │   │   ├── ChatHistoryDialog.java // Hộp thoại tra cứu, tìm kiếm và xuất file lịch sử chat
     │   │   └── components\
-    │   │       ├── ChatHistoryPanel.java // Bong bóng chat hiện đại
+    │   │       ├── ChatHistoryPanel.java // Bong bóng chat hiện đại, hỗ trợ nạp hội thoại
     │   │       ├── FileTransferBar.java  // Thanh tiến trình, nút Pause/Resume, ETA
     │   │       └── OnlinePeersPanel.java // Danh sách phòng chung & thiết bị online
     │   └── util\
@@ -74,7 +85,9 @@ LTM/
     │       ├── SecurityUtil.java    // Mã hóa AES-GCM
     │       └── AudioNotifier.java   // Âm thanh chuông báo 'ting ting'
     └── test\java\com\lan\chat\
-        └── NetworkTest.java         // Bài kiểm thử tự động toàn diện
+        ├── NetworkTest.java         // Bài kiểm thử tự động toàn diện
+        └── history\
+            └── ChatHistoryTest.java // Bài kiểm thử tự động hệ thống lịch sử chat
 ```
 
 ---

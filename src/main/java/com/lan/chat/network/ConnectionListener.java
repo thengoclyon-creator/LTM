@@ -7,6 +7,9 @@ public interface ConnectionListener {
     void onConnected(Peer peer);
     void onDisconnected(Peer peer, String reason);
     void onMessageReceived(Peer peer, String text, boolean isEncrypted);
+    default void onPrivateMessageReceived(Peer peer, String text, boolean isEncrypted) {
+        onMessageReceived(peer, text, isEncrypted);
+    }
     void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize);
     void onFileProgress(FileTransferTask task);
     void onFileCompleted(FileTransferTask task, boolean success, String message);

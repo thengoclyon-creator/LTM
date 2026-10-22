@@ -105,7 +105,8 @@ public class PeerConnection {
                 switch (packetType) {
                     case PacketType.HANDSHAKE -> handleHandshake();
                     case PacketType.HANDSHAKE_ACK -> handleHandshakeAck();
-                    case PacketType.CHAT_TEXT -> handleChatText();
+                    case PacketType.CHAT_TEXT -> handleChatText(false);
+                    case PacketType.CHAT_PRIVATE -> handleChatText(true);
                     case PacketType.PING -> handlePing();
                     case PacketType.PONG -> handlePong();
                     case PacketType.DISCONNECT -> handleDisconnectPacket();
@@ -166,10 +167,14 @@ public class PeerConnection {
         listener.onStatusLog("Bắt tay thành công với " + remoteName, false);
     }
 
-    private void handleChatText() throws IOException {
+    private void handleChatText(boolean isPrivate) throws IOException {
         boolean isEncrypted = dis.readBoolean();
         String text = dis.readUTF();
-        listener.onMessageReceived(peer, text, isEncrypted);
+        if (isPrivate) {
+            listener.onPrivateMessageReceived(peer, text, isEncrypted);
+        } else {
+            listener.onMessageReceived(peer, text, isEncrypted);
+        }
     }
 
     private void handlePing() throws IOException {
@@ -338,10 +343,14 @@ public class PeerConnection {
      * Send text message to peer.
      */
     public boolean sendTextMessage(String message, boolean isEncrypted) {
+        return sendTextMessage(message, isEncrypted, false);
+    }
+
+    public boolean sendTextMessage(String message, boolean isEncrypted, boolean isPrivate) {
         if (!isConnected()) return false;
         try {
             synchronized (sendLock) {
-                dos.writeInt(PacketType.CHAT_TEXT);
+                dos.writeInt(isPrivate ? PacketType.CHAT_PRIVATE : PacketType.CHAT_TEXT);
                 dos.writeBoolean(isEncrypted);
                 dos.writeUTF(message);
                 dos.flush();

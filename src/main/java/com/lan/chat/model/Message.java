@@ -13,11 +13,15 @@ public class Message {
     private final boolean isEncrypted;
 
     public Message(String sender, String content, MessageType type, boolean isMine, boolean isEncrypted) {
-        this.id = System.currentTimeMillis() + "_" + Math.random();
+        this(System.currentTimeMillis() + "_" + Math.random(), sender, content, System.currentTimeMillis(), type, isMine, isEncrypted);
+    }
+
+    public Message(String id, String sender, String content, long timestamp, MessageType type, boolean isMine, boolean isEncrypted) {
+        this.id = (id != null && !id.isEmpty()) ? id : (System.currentTimeMillis() + "_" + Math.random());
         this.sender = sender;
         this.content = content;
-        this.timestamp = System.currentTimeMillis();
-        this.type = type;
+        this.timestamp = timestamp > 0 ? timestamp : System.currentTimeMillis();
+        this.type = type != null ? type : MessageType.TEXT;
         this.isMine = isMine;
         this.isEncrypted = isEncrypted;
     }
@@ -44,5 +48,9 @@ public class Message {
 
     public String getFormattedTime() {
         return new SimpleDateFormat("HH:mm:ss").format(new Date(timestamp));
+    }
+
+    public String getFormattedDateTime() {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(timestamp));
     }
 }

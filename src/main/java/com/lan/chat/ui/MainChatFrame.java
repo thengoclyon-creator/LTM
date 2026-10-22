@@ -1,5 +1,6 @@
 package com.lan.chat.ui;
 
+import com.lan.chat.history.ChatHistoryManager;
 import com.lan.chat.model.FileTransferTask;
 import com.lan.chat.model.Message;
 import com.lan.chat.model.Peer;
@@ -18,10 +19,12 @@ import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.io.File;
+import java.util.List;
 
 public class MainChatFrame extends JFrame implements ConnectionListener {
 
     private final ConnectionManager connectionManager;
+    private final ChatHistoryManager historyManager = new ChatHistoryManager();
     private Peer activeTargetPeer = null; // null = Broadcast to all (Group Chat)
 
     // Header Controls
@@ -166,6 +169,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         peersPanel.setOnChatTargetSelected(peer -> {
             this.activeTargetPeer = peer;
             updateChatTargetBanner();
+            loadConversationForCurrentTarget();
         });
         peersPanel.setOnPeerConnectRequest(peer -> {
             txtTargetIp.setText(peer.getIp());
@@ -220,10 +224,32 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         btnMute.setVisible(false);
         btnMute.addActionListener(e -> toggleMute());
 
+        JButton btnHistory = new JButton("📜 Lịch sử");
+        btnHistory.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnHistory.setToolTipText("Tra cứu & Tìm kiếm lịch sử tin nhắn");
+        btnHistory.setFocusPainted(false);
+        btnHistory.addActionListener(e -> openHistoryDialog());
+
+        JButton btnExport = new JButton("💾 Xuất");
+        btnExport.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnExport.setToolTipText("Xuất hội thoại hiện tại ra file HTML hoặc TXT");
+        btnExport.setFocusPainted(false);
+        btnExport.addActionListener(e -> exportCurrentChat());
+
+        JButton btnClear = new JButton("🗑️ Xóa");
+        btnClear.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnClear.setToolTipText("Xóa lịch sử cuộc trò chuyện hiện tại");
+        btnClear.setFocusPainted(false);
+        btnClear.addActionListener(e -> clearCurrentChat());
+
         voiceActions.add(lblCallBanner);
         voiceActions.add(btnCall);
         voiceActions.add(btnMute);
         voiceActions.add(btnHangup);
+        voiceActions.add(Box.createHorizontalStrut(6));
+        voiceActions.add(btnHistory);
+        voiceActions.add(btnExport);
+        voiceActions.add(btnClear);
 
         subHeaderPanel.add(lblActivePeerStatus, BorderLayout.WEST);
         subHeaderPanel.add(voiceActions, BorderLayout.EAST);
@@ -252,6 +278,9 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         chatContainer.add(subHeaderPanel, BorderLayout.NORTH);
         chatContainer.add(chatHistoryPanel, BorderLayout.CENTER);
         chatContainer.add(fileTransferBar, BorderLayout.SOUTH);
+
+        // Load saved chat history on startup
+        loadConversationForCurrentTarget();
 
         // Split Pane (Sidebar left, Chat right)
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, peersPanel, chatContainer);
@@ -477,6 +506,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
         if (sent) {
             Message msg = Message.userText(prefix, text, true, connectionManager.isE2eeEnabled());
+            historyManager.saveMessage(getCurrentConversationKey(), msg);
             chatHistoryPanel.appendMessage(msg);
             txtMessageInput.setText("");
         } else {
@@ -563,7 +593,26 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     public void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
         SwingUtilities.invokeLater(() -> {
             Message msg = Message.userText(peer.getNickname(), text, false, isEncrypted);
-            chatHistoryPanel.appendMessage(msg);
+            historyManager.saveMessage(ChatHistoryManager.GROUP_CONVERSATION_KEY, msg);
+            if (activeTargetPeer == null) {
+                chatHistoryPanel.appendMessage(msg);
+            } else {
+                chatHistoryPanel.appendSystem("Tin mới tại [Phòng Chat Chung] từ " + peer.getNickname() + ": " + text, false);
+            }
+        });
+    }
+
+    @Override
+    public void onPrivateMessageReceived(Peer peer, String text, boolean isEncrypted) {
+        SwingUtilities.invokeLater(() -> {
+            Message msg = Message.userText(peer.getNickname(), text, false, isEncrypted);
+            String peerKey = ChatHistoryManager.getConversationKey(peer);
+            historyManager.saveMessage(peerKey, msg);
+            if (activeTargetPeer != null && activeTargetPeer.getIp().equals(peer.getIp()) && activeTargetPeer.getPort() == peer.getPort()) {
+                chatHistoryPanel.appendMessage(msg);
+            } else {
+                chatHistoryPanel.appendSystem("💬 Tin riêng mới từ " + peer.getNickname() + ": " + text, false);
+            }
         });
     }
 
@@ -641,4 +690,76 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             chatHistoryPanel.appendSystem("Đối phương đã gác máy.", false);
         });
     }
+
+    // ==========================================
+    // Chat History Management Helpers
+    // ==========================================
+
+    private String getCurrentConversationKey() {
+        return ChatHistoryManager.getConversationKey(activeTargetPeer);
+    }
+
+    private void loadConversationForCurrentTarget() {
+        String key = getCurrentConversationKey();
+        List<Message> history = historyManager.getMessages(key);
+        String welcome;
+        if (activeTargetPeer == null) {
+            welcome = "Chào mừng tới PHÒNG CHAT CHUNG mạng LAN. Tin nhắn gửi tới tất cả thiết bị.";
+        } else {
+            welcome = "Phiên chat riêng tư với " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getIp() + ")";
+        }
+        chatHistoryPanel.setConversation(history, welcome);
+    }
+
+    private void openHistoryDialog() {
+        ChatHistoryDialog dialog = new ChatHistoryDialog(this, historyManager, getCurrentConversationKey());
+        dialog.setVisible(true);
+        loadConversationForCurrentTarget();
+    }
+
+    private void exportCurrentChat() {
+        String key = getCurrentConversationKey();
+        List<Message> msgs = historyManager.getMessages(key);
+        if (msgs.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Cuộc trò chuyện này chưa có tin nhắn nào để xuất!", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        String[] options = {"HTML (Đẹp & Đầy đủ)", "TXT (Văn bản thuần)"};
+        int choice = JOptionPane.showOptionDialog(this,
+                "Chọn định dạng bạn muốn xuất lịch sử cuộc trò chuyện:",
+                "Xuất Lịch Sử Chat",
+                JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+
+        if (choice < 0) return;
+        boolean asHtml = (choice == 0);
+        String ext = asHtml ? ".html" : ".txt";
+        String defName = "LichSuChat_" + key + ext;
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setSelectedFile(new File(defName));
+        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File dest = chooser.getSelectedFile();
+            boolean ok = asHtml ? historyManager.exportToHtml(key, dest) : historyManager.exportToText(key, dest);
+            if (ok) {
+                JOptionPane.showMessageDialog(this, "Đã xuất lịch sử chat ra file:\n" + dest.getAbsolutePath(), "Thành công", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Không thể lưu file!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void clearCurrentChat() {
+        String key = getCurrentConversationKey();
+        int opt = JOptionPane.showConfirmDialog(this,
+                "Bạn có chắc muốn xóa sạch lịch sử của cuộc hội thoại này?\n(Toàn bộ tin nhắn đã lưu trên máy sẽ bị xóa)",
+                "Xác nhận xóa lịch sử",
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (opt == JOptionPane.YES_OPTION) {
+            historyManager.clearConversation(key);
+            loadConversationForCurrentTarget();
+            chatHistoryPanel.appendSystem("Đã xóa sạch lịch sử cuộc hội thoại.", false);
+        }
+    }
 }
+

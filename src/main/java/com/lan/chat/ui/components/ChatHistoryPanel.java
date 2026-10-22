@@ -180,10 +180,32 @@ public class ChatHistoryPanel extends JPanel {
         });
     }
 
-    public void clear() {
+    public void setConversation(java.util.List<Message> messages, String welcomeNote) {
         SwingUtilities.invokeLater(() -> {
-            textPane.setText("");
+            try {
+                textPane.setText("");
+                StringBuilder sb = new StringBuilder("<div id='chat-box'>");
+                if (welcomeNote != null && !welcomeNote.isEmpty()) {
+                    sb.append("<div class='system-msg'><span class='system-bubble'>● ")
+                      .append(escapeHtml(welcomeNote))
+                      .append("</span></div>");
+                }
+                if (messages != null) {
+                    for (Message msg : messages) {
+                        sb.append(buildMessageHtml(msg));
+                    }
+                }
+                sb.append("</div>");
+                editorKit.insertHTML(document, 0, sb.toString(), 0, 0, null);
+                scrollToBottom();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         });
+    }
+
+    public void clear() {
+        setConversation(java.util.Collections.emptyList(), null);
     }
 
     private String escapeHtml(String text) {
