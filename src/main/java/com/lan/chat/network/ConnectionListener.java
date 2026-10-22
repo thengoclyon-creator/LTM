@@ -6,7 +6,10 @@ import com.lan.chat.model.Peer;
 public interface ConnectionListener {
     void onConnected(Peer peer);
     void onDisconnected(Peer peer, String reason);
-    void onMessageReceived(Peer peer, String text, boolean isEncrypted);
+    void onMessageReceived(Peer peer, String text, boolean isEncrypted, boolean isGroup);
+    default void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
+        onMessageReceived(peer, text, isEncrypted, true);
+    }
     void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize);
     void onFileProgress(FileTransferTask task);
     void onFileCompleted(FileTransferTask task, boolean success, String message);

@@ -39,8 +39,8 @@ public class NetworkTest {
             }
 
             @Override
-            public void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
-                System.out.println("[Server] Nhan tin nhan: '" + text + "' (Ma hoa: " + isEncrypted + ")");
+            public void onMessageReceived(Peer peer, String text, boolean isEncrypted, boolean isGroup) {
+                System.out.println("[Server] Nhan tin nhan: '" + text + "' (Ma hoa: " + isEncrypted + ", Nhom: " + isGroup + ")");
                 receivedMsg.set(text);
                 msgLatch.countDown();
             }
@@ -98,7 +98,7 @@ public class NetworkTest {
             public void onDisconnected(Peer peer, String reason) {}
 
             @Override
-            public void onMessageReceived(Peer peer, String text, boolean isEncrypted) {}
+            public void onMessageReceived(Peer peer, String text, boolean isEncrypted, boolean isGroup) {}
 
             @Override
             public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {}

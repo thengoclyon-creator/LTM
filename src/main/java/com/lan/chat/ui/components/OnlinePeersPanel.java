@@ -151,6 +151,10 @@ public class OnlinePeersPanel extends JPanel {
         lblPeerCount.setText("(" + count + " thiết bị)");
     }
 
+    public void refreshList() {
+        SwingUtilities.invokeLater(peerJList::repaint);
+    }
+
     private static class PeerCellRenderer extends JPanel implements ListCellRenderer<Peer> {
         private final JLabel lblBadge = new JLabel();
         private final JLabel lblName = new JLabel();
@@ -217,7 +221,10 @@ public class OnlinePeersPanel extends JPanel {
                 lblIp.setText(peer.getIp() + ":" + peer.getPort());
                 lblIp.setForeground(new Color(100, 116, 139));
 
-                if (peer.isConnected()) {
+                if (peer.getUnreadCount() > 0) {
+                    lblStatus.setText("● " + peer.getUnreadCount() + " tin mới");
+                    lblStatus.setForeground(new Color(220, 38, 38));
+                } else if (peer.isConnected()) {
                     lblStatus.setText("● Đã nối");
                     lblStatus.setForeground(new Color(37, 99, 235));
                 } else if (peer.isOnline()) {

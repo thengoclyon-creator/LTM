@@ -9,14 +9,21 @@ if exist "C:\Program Files\Apache NetBeans\jdk\bin\javaw.exe" (
     set "JAVA_BIN=C:\Program Files\Apache NetBeans\jdk\bin\java.exe"
 )
 
+set "JAR_PATH=%~dp0target\lan-chat-app-1.0.0.jar"
+if not exist "%JAR_PATH%" (
+    if exist "%~dp0lan-chat-app-1.0.0.jar" (
+        set "JAR_PATH=%~dp0lan-chat-app-1.0.0.jar"
+    )
+)
+
 echo [1/2] Dang khoi dong May_A (Port 5000)...
-start "LAN Chat - May A" "%JAVA_BIN%" --enable-native-access=ALL-UNNAMED -jar "%~dp0target\lan-chat-app-1.0.0.jar" "May_A" 5000
+start "LAN Chat - May A" "%JAVA_BIN%" --enable-native-access=ALL-UNNAMED -jar "%JAR_PATH%" "May_A" 5000
 
 REM Delay 1 second
 ping -n 2 127.0.0.1 > nul
 
 echo [2/2] Dang khoi dong May_B (Port 5001)...
-start "LAN Chat - May B" "%JAVA_BIN%" --enable-native-access=ALL-UNNAMED -jar "%~dp0target\lan-chat-app-1.0.0.jar" "May_B" 5001
+start "LAN Chat - May B" "%JAVA_BIN%" --enable-native-access=ALL-UNNAMED -jar "%JAR_PATH%" "May_B" 5001
 
 echo.
 echo ========================================================

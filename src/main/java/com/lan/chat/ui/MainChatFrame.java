@@ -18,11 +18,17 @@ import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.io.File;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MainChatFrame extends JFrame implements ConnectionListener {
 
     private final ConnectionManager connectionManager;
     private Peer activeTargetPeer = null; // null = Broadcast to all (Group Chat)
+    private static final String GROUP_CHANNEL = "GROUP";
+    private final Map<String, List<Message>> conversationHistories = new ConcurrentHashMap<>();
 
     // Header Controls
     private JLabel lblMyIp;
@@ -59,6 +65,8 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         initCenterPanel();
         initInputPanel();
         initVoiceCallbacks();
+
+        refreshCurrentConversationView();
 
         // Default startup: Automatically launch local server & UDP Auto-Discovery
         startLocalServer();
@@ -163,10 +171,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
         // Left sidebar: Online devices list with Group Chat support
         peersPanel = new OnlinePeersPanel();
-        peersPanel.setOnChatTargetSelected(peer -> {
-            this.activeTargetPeer = peer;
-            updateChatTargetBanner();
-        });
+        peersPanel.setOnChatTargetSelected(this::switchChatTarget);
         peersPanel.setOnPeerConnectRequest(peer -> {
             txtTargetIp.setText(peer.getIp());
             txtTargetPort.setText(String.valueOf(peer.getPort()));
@@ -397,12 +402,44 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         btnMute.setForeground(newMuted ? new Color(220, 38, 38) : null);
     }
 
+    private String getActiveChannelKey() {
+        return activeTargetPeer == null ? GROUP_CHANNEL : activeTargetPeer.getAddressKey();
+    }
+
+    private void switchChatTarget(Peer peer) {
+        this.activeTargetPeer = peer;
+        if (peer != null) {
+            peer.clearUnread();
+            peersPanel.refreshList();
+
+            // Auto-connect if discovered online but not yet connected
+            if (!peer.isConnected() && peer.isOnline()) {
+                connectionManager.connectToPeer(peer.getIp(), peer.getPort());
+            }
+        }
+        updateChatTargetBanner();
+        refreshCurrentConversationView();
+    }
+
+    private void refreshCurrentConversationView() {
+        String channelKey = getActiveChannelKey();
+        List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>());
+        String notice;
+        if (activeTargetPeer == null) {
+            notice = "📢 PHÒNG CHAT CHUNG LAN: Gửi tin tới tất cả thiết bị đang online.";
+        } else {
+            notice = "🔒 CHAT RIÊNG VỚI " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getAddressKey() + "). Cuộc trò chuyện riêng tư 1-1.";
+        }
+        chatHistoryPanel.renderConversation(history, notice);
+    }
+
     private void updateChatTargetBanner() {
         if (activeTargetPeer == null) {
             lblActivePeerStatus.setText("PHÒNG CHAT CHUNG - Gửi tin tới tất cả thiết bị LAN");
             lblActivePeerStatus.setForeground(new Color(15, 23, 42));
         } else {
-            lblActivePeerStatus.setText("Chat Riêng với: " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getIp() + ")");
+            String connStatus = activeTargetPeer.isConnected() ? "Đã nối trực tiếp 1-1" : "Đang kết nối...";
+            lblActivePeerStatus.setText("CHAT RIÊNG: " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getAddressKey() + ") • " + connStatus);
             lblActivePeerStatus.setForeground(new Color(67, 56, 202));
         }
     }
@@ -463,24 +500,32 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         if (text.isEmpty()) return;
 
         boolean sent;
-        String prefix;
+        String channelKey;
+        String myPrefix;
 
         if (activeTargetPeer == null) {
             // Group Chat: Broadcast to all connected peers
             sent = connectionManager.broadcastTextMessage(text);
-            prefix = "[Chung] Bạn";
+            channelKey = GROUP_CHANNEL;
+            myPrefix = "Bạn [Chung]";
         } else {
             // Private Chat: Send to specific target peer
             sent = connectionManager.sendPrivateMessage(activeTargetPeer, text);
-            prefix = "[Riêng tới " + activeTargetPeer.getNickname() + "] Bạn";
+            channelKey = activeTargetPeer.getAddressKey();
+            myPrefix = "Bạn [Chat riêng]";
         }
 
         if (sent) {
-            Message msg = Message.userText(prefix, text, true, connectionManager.isE2eeEnabled());
-            chatHistoryPanel.appendMessage(msg);
+            Message msg = Message.userText(myPrefix, text, true, connectionManager.isE2eeEnabled());
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>());
+            history.add(msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
+            }
             txtMessageInput.setText("");
         } else {
-            chatHistoryPanel.appendSystem("Chưa thể gửi tin nhắn! Hãy đảm bảo đã kết nối tới ít nhất 1 thiết bị.", true);
+            chatHistoryPanel.appendSystem("Chưa thể gửi tin nhắn! Hãy đảm bảo đã kết nối tới thiết bị đối phương.", true);
         }
     }
 
@@ -560,11 +605,36 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     }
 
     @Override
-    public void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
+    public void onMessageReceived(Peer peer, String text, boolean isEncrypted, boolean isGroup) {
         SwingUtilities.invokeLater(() -> {
-            Message msg = Message.userText(peer.getNickname(), text, false, isEncrypted);
-            chatHistoryPanel.appendMessage(msg);
+            String channelKey;
+            Message msg;
+
+            if (isGroup) {
+                channelKey = GROUP_CHANNEL;
+                msg = Message.userText(peer.getNickname() + " [Chung]", text, false, isEncrypted);
+            } else {
+                channelKey = peer.getAddressKey();
+                msg = Message.userText(peer.getNickname() + " [Chat riêng]", text, false, isEncrypted);
+            }
+
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>());
+            history.add(msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
+            } else {
+                if (!isGroup) {
+                    peer.incrementUnread();
+                    peersPanel.refreshList();
+                }
+            }
         });
+    }
+
+    @Override
+    public void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
+        onMessageReceived(peer, text, isEncrypted, true);
     }
 
     @Override

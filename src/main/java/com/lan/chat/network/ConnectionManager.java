@@ -131,6 +131,11 @@ public class ConnectionManager {
      * Connect manually or automatically to a peer IP:Port via TCP Socket.
      */
     public void connectToPeer(String ip, int port) {
+        if (port == this.listenPort && (ip.equals("127.0.0.1") || ip.equalsIgnoreCase("localhost") || NetworkUtil.getLocalIPv4Addresses().contains(ip))) {
+            broadcastLog("Không thể tự kết nối tới chính mình (" + ip + ":" + port + ")!", true);
+            return;
+        }
+
         String key = ip + ":" + port;
         if (connectedPeers.containsKey(key) && connectedPeers.get(key).isConnected()) {
             return; // Already connected
@@ -207,7 +212,7 @@ public class ConnectionManager {
             }
 
             @Override
-            public void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
+            public void onMessageReceived(Peer peer, String text, boolean isEncrypted, boolean isGroup) {
                 String plainText = text;
                 if (isEncrypted) {
                     try {
@@ -217,7 +222,7 @@ public class ConnectionManager {
                     }
                 }
                 AudioNotifier.playMessageTing();
-                for (ConnectionListener l : listeners) l.onMessageReceived(peer, plainText, isEncrypted);
+                for (ConnectionListener l : listeners) l.onMessageReceived(peer, plainText, isEncrypted, isGroup);
             }
 
             @Override
@@ -269,6 +274,12 @@ public class ConnectionManager {
     }
 
     public synchronized void registerOrUpdatePeer(Peer peer) {
+        if (peer == null) return;
+        // Do not register self
+        if (peer.getPort() == this.listenPort && (peer.getIp().equals("127.0.0.1") || peer.getIp().equalsIgnoreCase("localhost") || NetworkUtil.getLocalIPv4Addresses().contains(peer.getIp()))) {
+            return;
+        }
+
         boolean found = false;
         for (Peer p : onlinePeers) {
             if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
@@ -311,7 +322,7 @@ public class ConnectionManager {
         boolean anySuccess = false;
         for (PeerConnection conn : connectedPeers.values()) {
             if (conn.isConnected()) {
-                boolean ok = conn.sendTextMessage(payload, encrypted);
+                boolean ok = conn.sendTextMessage(payload, encrypted, true);
                 if (ok) anySuccess = true;
             }
         }
@@ -337,7 +348,7 @@ public class ConnectionManager {
             } catch (Exception ignored) {}
         }
 
-        return conn.sendTextMessage(payload, encrypted);
+        return conn.sendTextMessage(payload, encrypted, false);
     }
 
     /**

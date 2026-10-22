@@ -81,6 +81,12 @@ public class ChatHistoryPanel extends JPanel {
                 color: #4F46E5;
                 margin-bottom: 3px;
             }
+            .sender-name-me {
+                font-weight: bold;
+                font-size: 10px;
+                color: #C7D2FE;
+                margin-bottom: 2px;
+            }
             .system-msg {
                 text-align: center;
                 margin: 8px 0;
@@ -144,20 +150,47 @@ public class ChatHistoryPanel extends JPanel {
         });
     }
 
+    public void renderConversation(java.util.List<Message> messages, String headerNotice) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                document.remove(0, document.getLength());
+                StringBuilder sb = new StringBuilder();
+                sb.append("<div id='chat-box'>");
+                if (headerNotice != null && !headerNotice.isEmpty()) {
+                    sb.append("<div class='system-msg'><span class='system-bubble'>")
+                      .append(escapeHtml(headerNotice))
+                      .append("</span></div>");
+                }
+                if (messages != null) {
+                    for (Message msg : messages) {
+                        sb.append(buildMessageHtml(msg));
+                    }
+                }
+                sb.append("</div>");
+                editorKit.insertHTML(document, 0, sb.toString(), 0, 0, null);
+                scrollToBottom();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
     private String buildMessageHtml(Message msg) {
         String safeContent = escapeHtml(msg.getContent()).replace("\n", "<br>");
         String time = msg.getFormattedTime();
         String lockBadge = msg.isEncrypted() ? " [E2EE]" : "";
 
         if (msg.isMine()) {
+            String myLabel = (msg.getSender() != null && !msg.getSender().isEmpty()) ? msg.getSender() : "Bạn";
             return String.format(
                     "<div class='msg-row-me'>" +
                     "  <div class='msg-bubble-me'>" +
+                    "    <div class='sender-name-me'>%s</div>" +
                     "    <div>%s</div>" +
                     "    <div class='msg-meta msg-meta-me'>%s%s</div>" +
                     "  </div>" +
                     "</div>",
-                    safeContent, time, lockBadge
+                    escapeHtml(myLabel), safeContent, time, lockBadge
             );
         } else {
             return String.format(

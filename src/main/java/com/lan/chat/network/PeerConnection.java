@@ -181,8 +181,9 @@ public class PeerConnection {
 
     private void handleChatText() throws IOException {
         boolean isEncrypted = dis.readBoolean();
+        boolean isGroup = dis.readBoolean();
         String text = dis.readUTF();
-        listener.onMessageReceived(peer, text, isEncrypted);
+        listener.onMessageReceived(peer, text, isEncrypted, isGroup);
     }
 
     private void handlePing() throws IOException {
@@ -348,14 +349,15 @@ public class PeerConnection {
     // ==========================================
 
     /**
-     * Send text message to peer.
+     * Send text message to peer (Group broadcast or 1-1 Private).
      */
-    public boolean sendTextMessage(String message, boolean isEncrypted) {
+    public boolean sendTextMessage(String message, boolean isEncrypted, boolean isGroup) {
         if (!isConnected()) return false;
         try {
             synchronized (sendLock) {
                 dos.writeInt(PacketType.CHAT_TEXT);
                 dos.writeBoolean(isEncrypted);
+                dos.writeBoolean(isGroup);
                 dos.writeUTF(message);
                 dos.flush();
             }
@@ -364,6 +366,10 @@ public class PeerConnection {
             listener.onStatusLog("Lỗi gửi tin nhắn: " + e.getMessage(), true);
             return false;
         }
+    }
+
+    public boolean sendTextMessage(String message, boolean isEncrypted) {
+        return sendTextMessage(message, isEncrypted, true);
     }
 
     /**

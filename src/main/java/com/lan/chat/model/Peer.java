@@ -11,6 +11,7 @@ public class Peer {
     private long lastSeen;
     private int voiceUdpPort = 6000;
     private boolean autoDiscovered = false;
+    private int unreadCount = 0;
 
     public Peer(String ip, int port, String nickname) {
         this.ip = ip;
@@ -25,6 +26,10 @@ public class Peer {
     public void setVoiceUdpPort(int voiceUdpPort) { this.voiceUdpPort = voiceUdpPort; }
     public boolean isAutoDiscovered() { return autoDiscovered; }
     public void setAutoDiscovered(boolean autoDiscovered) { this.autoDiscovered = autoDiscovered; }
+    public int getUnreadCount() { return unreadCount; }
+    public void setUnreadCount(int unreadCount) { this.unreadCount = unreadCount; }
+    public void incrementUnread() { this.unreadCount++; }
+    public void clearUnread() { this.unreadCount = 0; }
 
     public String getIp() { return ip; }
     public int getPort() { return port; }
