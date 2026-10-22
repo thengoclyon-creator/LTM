@@ -29,17 +29,18 @@ echo [2/3] Dang bien dich cac file ma nguon Java...
 if exist "%~dp0target\classes" rmdir /s /q "%~dp0target\classes"
 mkdir "%~dp0target\classes" 2>nul
 
-cd /d "%~dp0target\classes"
-"%JDK_BIN%jar.exe" -xf "%~dp0lib\flatlaf-3.5.4.jar"
-"%JDK_BIN%jar.exe" -xf "%~dp0lib\flatlaf-extras-3.5.4.jar"
-cd /d "%~dp0"
-
 powershell -NoProfile -Command "$src = (Get-ChildItem -Path '%~dp0src\main\java' -Recurse -Filter '*.java').FullName; & '%JDK_BIN%javac.exe' -encoding UTF-8 -cp '%~dp0lib\*' -d '%~dp0target\classes' $src"
 if %errorlevel% neq 0 (
     echo [LOI] Bien dich that bai!
     pause
     exit /b 1
 )
+
+cd /d "%~dp0target\classes"
+"%JDK_BIN%jar.exe" -xf "%~dp0lib\flatlaf-3.5.4.jar"
+"%JDK_BIN%jar.exe" -xf "%~dp0lib\flatlaf-extras-3.5.4.jar"
+if exist "%~dp0target\classes\module-info.class" del /f /q "%~dp0target\classes\module-info.class"
+cd /d "%~dp0"
 
 echo [3/3] Dang dong goi file jar hoan chinh...
 (

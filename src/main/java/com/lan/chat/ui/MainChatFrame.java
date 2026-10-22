@@ -406,11 +406,14 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             int port = Integer.parseInt(txtLocalPort.getText().trim());
             boolean ok = connectionManager.startServer(port);
             if (ok) {
+                int actualPort = connectionManager.getListenPort();
+                txtLocalPort.setText(String.valueOf(actualPort));
+                setTitle("LAN Chat Pro - [" + connectionManager.getNickname() + " : Port " + actualPort + "]");
                 btnToggleServer.setText("Dừng Server");
                 btnToggleServer.setBackground(new Color(59, 165, 93));
                 btnToggleServer.setForeground(Color.WHITE);
                 txtLocalPort.setEnabled(false);
-                chatHistoryPanel.appendSystem("ServerSocket & Auto-Discovery UDP đã bật tại cổng " + port, false);
+                chatHistoryPanel.appendSystem("ServerSocket & Auto-Discovery UDP đã bật tại cổng " + actualPort, false);
             }
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, "Cổng Port phải là số nguyên (VD: 5000)", "Lỗi", JOptionPane.ERROR_MESSAGE);

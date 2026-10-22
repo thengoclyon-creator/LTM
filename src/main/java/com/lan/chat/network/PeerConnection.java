@@ -20,7 +20,10 @@ public class PeerConnection {
 
     private final Socket socket;
     private final Peer peer;
+    private final String myNodeId;
     private final String myNickname;
+    private final int myListenPort;
+    private final int myVoicePort;
     private final ConnectionListener listener;
 
     private DataInputStream dis;
@@ -28,20 +31,28 @@ public class PeerConnection {
     private final Object sendLock = new Object();
 
     private volatile boolean running = false;
+    private volatile boolean handshakeCompleted = false;
     private Thread readerThread;
 
     // Active file tasks
     private final Map<String, FileTransferTask> activeTasks = new ConcurrentHashMap<>();
     private File downloadFolder = new File(System.getProperty("user.home"), "Downloads");
 
-    public PeerConnection(Socket socket, String myNickname, ConnectionListener listener) {
+    public PeerConnection(Socket socket, String myNodeId, String myNickname, int myListenPort, int myVoicePort, ConnectionListener listener) {
         this.socket = socket;
+        this.myNodeId = myNodeId;
         this.myNickname = myNickname;
+        this.myListenPort = myListenPort;
+        this.myVoicePort = myVoicePort;
         this.listener = listener;
 
         String remoteIp = socket.getInetAddress().getHostAddress();
         int remotePort = socket.getPort();
         this.peer = new Peer(remoteIp, remotePort, remoteIp);
+    }
+
+    public PeerConnection(Socket socket, String myNickname, ConnectionListener listener) {
+        this(socket, null, myNickname, 5000, 6000, listener);
     }
 
     public void setDownloadFolder(File folder) {
@@ -75,7 +86,7 @@ public class PeerConnection {
         readerThread.setDaemon(true);
         readerThread.start();
 
-        // Send handshake packet with our nickname
+        // Send handshake packet with our identity & listening port
         sendHandshake();
     }
 
@@ -83,7 +94,10 @@ public class PeerConnection {
         try {
             synchronized (sendLock) {
                 dos.writeInt(PacketType.HANDSHAKE);
+                dos.writeUTF(myNodeId != null ? myNodeId : "");
                 dos.writeUTF(myNickname);
+                dos.writeInt(myListenPort);
+                dos.writeInt(myVoicePort);
                 dos.flush();
             }
         } catch (IOException e) {
@@ -96,7 +110,6 @@ public class PeerConnection {
      */
     private void readLoop() {
         peer.setConnected(true);
-        listener.onConnected(peer);
 
         try {
             while (running && !socket.isClosed()) {
@@ -148,28 +161,69 @@ public class PeerConnection {
     }
 
     private void handleHandshake() throws IOException {
+        String remoteNodeId = dis.readUTF();
         String remoteName = dis.readUTF();
+        int remoteListenPort = dis.readInt();
+        int remoteVoicePort = dis.readInt();
+
+        if (!remoteNodeId.isEmpty()) {
+            peer.setId(remoteNodeId);
+        }
         peer.setNickname(remoteName);
-        listener.onStatusLog("Đã kết nối với " + remoteName + " [" + peer.getIp() + "]", false);
+        if (remoteListenPort > 0) {
+            peer.setPort(remoteListenPort);
+        }
+        if (remoteVoicePort > 0) {
+            peer.setVoiceUdpPort(remoteVoicePort);
+        }
 
         // Reply ACK
         synchronized (sendLock) {
             dos.writeInt(PacketType.HANDSHAKE_ACK);
+            dos.writeUTF(myNodeId != null ? myNodeId : "");
             dos.writeUTF(myNickname);
+            dos.writeInt(myListenPort);
+            dos.writeInt(myVoicePort);
             dos.flush();
         }
+
+        notifyHandshakeSuccess();
     }
 
     private void handleHandshakeAck() throws IOException {
+        String remoteNodeId = dis.readUTF();
         String remoteName = dis.readUTF();
+        int remoteListenPort = dis.readInt();
+        int remoteVoicePort = dis.readInt();
+
+        if (!remoteNodeId.isEmpty()) {
+            peer.setId(remoteNodeId);
+        }
         peer.setNickname(remoteName);
-        listener.onStatusLog("Bắt tay thành công với " + remoteName, false);
+        if (remoteListenPort > 0) {
+            peer.setPort(remoteListenPort);
+        }
+        if (remoteVoicePort > 0) {
+            peer.setVoiceUdpPort(remoteVoicePort);
+        }
+
+        notifyHandshakeSuccess();
+    }
+
+    private synchronized void notifyHandshakeSuccess() {
+        if (!handshakeCompleted) {
+            handshakeCompleted = true;
+            peer.setConnected(true);
+            listener.onConnected(peer);
+            listener.onStatusLog("Bắt tay thành công với " + peer.getNickname() + " (" + peer.getIp() + ":" + peer.getPort() + ")", false);
+        }
     }
 
     private void handleChatText() throws IOException {
+        String messageId = dis.readUTF();
         boolean isEncrypted = dis.readBoolean();
         String text = dis.readUTF();
-        listener.onMessageReceived(peer, text, isEncrypted);
+        listener.onMessageReceived(peer, messageId, text, isEncrypted);
     }
 
     private void handlePing() throws IOException {
@@ -335,13 +389,14 @@ public class PeerConnection {
     // ==========================================
 
     /**
-     * Send text message to peer.
+     * Send text message to peer with unique message ID for deduplication.
      */
-    public boolean sendTextMessage(String message, boolean isEncrypted) {
+    public boolean sendTextMessage(String messageId, String message, boolean isEncrypted) {
         if (!isConnected()) return false;
         try {
             synchronized (sendLock) {
                 dos.writeInt(PacketType.CHAT_TEXT);
+                dos.writeUTF(messageId != null ? messageId : java.util.UUID.randomUUID().toString());
                 dos.writeBoolean(isEncrypted);
                 dos.writeUTF(message);
                 dos.flush();
@@ -351,6 +406,10 @@ public class PeerConnection {
             listener.onStatusLog("Lỗi gửi tin nhắn: " + e.getMessage(), true);
             return false;
         }
+    }
+
+    public boolean sendTextMessage(String message, boolean isEncrypted) {
+        return sendTextMessage(java.util.UUID.randomUUID().toString(), message, isEncrypted);
     }
 
     /**

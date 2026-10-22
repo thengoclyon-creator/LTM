@@ -22,6 +22,7 @@ public class UdpDiscoveryService {
     private static final String PACKET_HEADER = "LAN_CHAT_DISCOVER";
     private static final String GOODBYE_HEADER = "LAN_CHAT_GOODBYE";
 
+    private final String nodeId;
     private final String nickname;
     private final int tcpPort;
     private final int voiceUdpPort;
@@ -34,13 +35,19 @@ public class UdpDiscoveryService {
     private Thread listenerThread;
     private Thread beaconThread;
 
-    public UdpDiscoveryService(String nickname, int tcpPort, int voiceUdpPort,
+    public UdpDiscoveryService(String nodeId, String nickname, int tcpPort, int voiceUdpPort,
                                Consumer<Peer> onPeerDiscovered, Consumer<Peer> onPeerLeft) {
+        this.nodeId = nodeId;
         this.nickname = nickname;
         this.tcpPort = tcpPort;
         this.voiceUdpPort = voiceUdpPort;
         this.onPeerDiscovered = onPeerDiscovered;
         this.onPeerLeft = onPeerLeft;
+    }
+
+    public UdpDiscoveryService(String nickname, int tcpPort, int voiceUdpPort,
+                               Consumer<Peer> onPeerDiscovered, Consumer<Peer> onPeerLeft) {
+        this(null, nickname, tcpPort, voiceUdpPort, onPeerDiscovered, onPeerLeft);
     }
 
     public synchronized void start() {
@@ -103,8 +110,9 @@ public class UdpDiscoveryService {
     public void broadcastBeacon() {
         if (socket == null || socket.isClosed()) return;
         try {
-            // Packet syntax: LAN_CHAT_DISCOVER|nickname|tcpPort|voiceUdpPort
-            String payload = String.format("%s|%s|%d|%d", PACKET_HEADER, nickname, tcpPort, voiceUdpPort);
+            // Packet syntax: LAN_CHAT_DISCOVER|nodeId|nickname|tcpPort|voiceUdpPort
+            String idToSend = (nodeId != null) ? nodeId : "";
+            String payload = String.format("%s|%s|%s|%d|%d", PACKET_HEADER, idToSend, nickname, tcpPort, voiceUdpPort);
             byte[] data = payload.getBytes(StandardCharsets.UTF_8);
 
             // Send to Multicast Group
@@ -154,23 +162,41 @@ public class UdpDiscoveryService {
         if (parts.length < 4) return;
 
         String header = parts[0];
-        String peerNick = parts[1];
+        String peerNodeId = null;
+        String peerNick;
         int peerTcpPort;
         int peerVoicePort;
 
-        try {
-            peerTcpPort = Integer.parseInt(parts[2]);
-            peerVoicePort = Integer.parseInt(parts[3]);
-        } catch (NumberFormatException e) {
-            return;
+        if (parts.length >= 5) {
+            // New 5-part format: HEADER|nodeId|nickname|tcpPort|voiceUdpPort
+            peerNodeId = parts[1].isEmpty() ? null : parts[1];
+            peerNick = parts[2];
+            try {
+                peerTcpPort = Integer.parseInt(parts[3]);
+                peerVoicePort = Integer.parseInt(parts[4]);
+            } catch (NumberFormatException e) {
+                return;
+            }
+        } else {
+            // Legacy 4-part format: HEADER|nickname|tcpPort|voiceUdpPort
+            peerNick = parts[1];
+            try {
+                peerTcpPort = Integer.parseInt(parts[2]);
+                peerVoicePort = Integer.parseInt(parts[3]);
+            } catch (NumberFormatException e) {
+                return;
+            }
         }
 
-        // Avoid discovering self on same IP and same TCP port
+        // Avoid discovering self: check by unique nodeId or IP + Port
+        if (this.nodeId != null && peerNodeId != null && this.nodeId.equals(peerNodeId)) {
+            return;
+        }
         if (peerTcpPort == this.tcpPort) {
             return;
         }
 
-        Peer peer = new Peer(senderIp, peerTcpPort, peerNick);
+        Peer peer = new Peer(peerNodeId, senderIp, peerTcpPort, peerNick);
         peer.setVoiceUdpPort(peerVoicePort);
 
         if (PACKET_HEADER.equals(header)) {
@@ -189,7 +215,8 @@ public class UdpDiscoveryService {
         try {
             // Send Goodbye beacon
             if (socket != null && !socket.isClosed() && groupAddress != null) {
-                String goodbye = String.format("%s|%s|%d|%d", GOODBYE_HEADER, nickname, tcpPort, voiceUdpPort);
+                String idToSend = (nodeId != null) ? nodeId : "";
+                String goodbye = String.format("%s|%s|%s|%d|%d", GOODBYE_HEADER, idToSend, nickname, tcpPort, voiceUdpPort);
                 byte[] data = goodbye.getBytes(StandardCharsets.UTF_8);
                 DatagramPacket p = new DatagramPacket(data, data.length, groupAddress, DISCOVERY_PORT);
                 socket.send(p);

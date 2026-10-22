@@ -114,7 +114,7 @@ public class OnlinePeersPanel extends JPanel {
             int index = -1;
             for (int i = 1; i < listModel.size(); i++) { // Skip group chat item at 0
                 Peer p = listModel.get(i);
-                if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
+                if (p.isSamePeer(peer)) {
                     index = i;
                     break;
                 }
@@ -132,7 +132,7 @@ public class OnlinePeersPanel extends JPanel {
         SwingUtilities.invokeLater(() -> {
             for (int i = 1; i < listModel.size(); i++) {
                 Peer p = listModel.get(i);
-                if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
+                if (p.isSamePeer(peer)) {
                     listModel.remove(i);
                     break;
                 }

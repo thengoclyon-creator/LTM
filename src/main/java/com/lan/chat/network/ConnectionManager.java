@@ -27,6 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class ConnectionManager {
 
+    private final String nodeId = java.util.UUID.randomUUID().toString();
     private String nickname;
     private int listenPort = 5000;
     private boolean e2eeEnabled = true;
@@ -35,10 +36,20 @@ public class ConnectionManager {
     private UdpDiscoveryService discoveryService;
     private VoiceCallService voiceCallService;
 
-    // Multi-peer connected map: Key = ip:port
+    // Multi-peer connected map: Key = peer.getAddressKey() (or nodeId)
     private final Map<String, PeerConnection> connectedPeers = new ConcurrentHashMap<>();
     private final List<Peer> onlinePeers = new CopyOnWriteArrayList<>();
     private final List<ConnectionListener> listeners = new CopyOnWriteArrayList<>();
+
+    // LRU set to deduplicate chat messages by unique message ID
+    private final java.util.Set<String> processedMessageIds = java.util.Collections.newSetFromMap(
+            new java.util.LinkedHashMap<String, Boolean>(128, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Boolean> eldest) {
+                    return size() > 1000;
+                }
+            }
+    );
 
     public ConnectionManager(String nickname, int listenPort) {
         this.nickname = nickname;
@@ -55,6 +66,7 @@ public class ConnectionManager {
         listeners.remove(listener);
     }
 
+    public String getNodeId() { return nodeId; }
     public String getNickname() { return nickname; }
     public void setNickname(String nickname) { this.nickname = nickname; }
     public int getListenPort() { return listenPort; }
@@ -70,28 +82,58 @@ public class ConnectionManager {
 
     /**
      * Start the background TCP Server and UDP Auto-Discovery.
+     * Automatically attempts consecutive ports if requested port is already in use.
      */
     public synchronized boolean startServer(int port) {
-        this.listenPort = port;
         stopServer();
 
+        java.net.ServerSocket ss = null;
+        int chosenPort = port;
+        for (int offset = 0; offset <= 20; offset++) {
+            int tryPort = port + offset;
+            try {
+                ss = new java.net.ServerSocket(tryPort);
+                chosenPort = tryPort;
+                break;
+            } catch (IOException ignored) {
+                // Port occupied, try next available port
+            }
+        }
+
+        if (ss == null) {
+            broadcastLog("Không thể khởi động ServerSocket tại cổng " + port + " (Tất cả cổng dự phòng đều bận)", true);
+            return false;
+        }
+
+        this.listenPort = chosenPort;
+        if (voiceCallService != null) {
+            voiceCallService.stop();
+        }
+        this.voiceCallService = new VoiceCallService(chosenPort + 1000);
+        this.voiceCallService.start();
+
         try {
-            tcpServer = new TcpServer(port, this::handleIncomingSocket, this::broadcastLog);
+            tcpServer = new TcpServer(ss, this::handleIncomingSocket, this::broadcastLog);
             tcpServer.start();
 
-            // Start UDP Auto-Discovery service
+            // Start UDP Auto-Discovery service with unique nodeId
             discoveryService = new UdpDiscoveryService(
+                    nodeId,
                     nickname,
-                    port,
+                    chosenPort,
                     voiceCallService.getLocalUdpPort(),
                     this::handlePeerDiscovered,
                     this::handlePeerLeft
             );
             discoveryService.start();
 
+            if (chosenPort != port) {
+                broadcastLog("Cổng " + port + " đã có ứng dụng khác dùng. Đã tự động chuyển sang lắng nghe tại cổng " + chosenPort + "!", false);
+            }
+
             return true;
         } catch (IOException e) {
-            broadcastLog("Không thể khởi động ServerSocket tại cổng " + port + ": " + e.getMessage(), true);
+            broadcastLog("Không thể khởi động ServerSocket tại cổng " + chosenPort + ": " + e.getMessage(), true);
             return false;
         }
     }
@@ -131,11 +173,19 @@ public class ConnectionManager {
      * Connect manually or automatically to a peer IP:Port via TCP Socket.
      */
     public void connectToPeer(String ip, int port) {
-        String key = ip + ":" + port;
-        if (connectedPeers.containsKey(key) && connectedPeers.get(key).isConnected()) {
-            return; // Already connected
+        // Prevent connecting to self
+        if (ip.equals(NetworkUtil.getPrimaryLocalIP()) && port == listenPort) {
+            return;
         }
 
+        // Deduplicate: check if already connected to this peer
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && conn.getPeer().getIp().equals(ip) && conn.getPeer().getPort() == port) {
+                return; // Already connected!
+            }
+        }
+
+        String key = ip + ":" + port;
         new Thread(() -> {
             try {
                 Socket socket = new Socket(ip, port);
@@ -144,9 +194,7 @@ public class ConnectionManager {
 
                 PeerConnection conn = createPeerConnection(socket);
                 conn.start();
-
                 AudioNotifier.playConnectChime();
-                broadcastLog("Kết nối thành công tới " + ip + ":" + port, false);
 
             } catch (IOException e) {
                 broadcastLog("Không thể kết nối tới " + ip + ":" + port + ": " + e.getMessage(), true);
@@ -158,21 +206,34 @@ public class ConnectionManager {
      * Handle automatic discovery of a peer on LAN.
      */
     private void handlePeerDiscovered(Peer peer) {
+        if (nodeId.equals(peer.getId())) return;
+        if (peer.getIp().equals(NetworkUtil.getPrimaryLocalIP()) && peer.getPort() == listenPort) return;
+
         peer.setAutoDiscovered(true);
         registerOrUpdatePeer(peer);
 
-        // Auto-connect mesh logic (connect if not already connected and deterministic tie-breaker)
-        String myKey = getMyAddressKey();
-        String peerKey = peer.getIp() + ":" + peer.getPort();
+        // Auto-connect mesh logic: connect only if not already connected
+        boolean alreadyConnected = false;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && conn.getPeer().isSamePeer(peer)) {
+                alreadyConnected = true;
+                break;
+            }
+        }
 
-        if (!connectedPeers.containsKey(peerKey) && myKey.compareTo(peerKey) < 0) {
-            connectToPeer(peer.getIp(), peer.getPort());
+        if (!alreadyConnected) {
+            // Deterministic tie-breaker: node with smaller key initiates connection to avoid cross-connecting
+            String myKey = nodeId;
+            String peerKey = peer.getId() != null ? peer.getId() : (peer.getIp() + ":" + peer.getPort());
+            if (myKey.compareTo(peerKey) < 0) {
+                connectToPeer(peer.getIp(), peer.getPort());
+            }
         }
     }
 
     private void handlePeerLeft(Peer peer) {
         for (Peer p : onlinePeers) {
-            if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
+            if (p.isSamePeer(peer)) {
                 p.setOnline(false);
                 break;
             }
@@ -187,13 +248,32 @@ public class ConnectionManager {
     }
 
     /**
-     * Create PeerConnection with internal event routing.
+     * Create PeerConnection with internal event routing and connection deduplication.
      */
     private PeerConnection createPeerConnection(Socket socket) {
         final PeerConnection[] holder = new PeerConnection[1];
-        holder[0] = new PeerConnection(socket, nickname, new ConnectionListener() {
+        holder[0] = new PeerConnection(
+                socket,
+                nodeId,
+                nickname,
+                listenPort,
+                voiceCallService.getLocalUdpPort(),
+                new ConnectionListener() {
             @Override
             public void onConnected(Peer peer) {
+                // 1. If connected to self, disconnect
+                if (nodeId.equals(peer.getId())) {
+                    holder[0].close();
+                    return;
+                }
+
+                // 2. Connection deduplication: if already connected to this peer, close redundant connection
+                PeerConnection existing = getPeerConnectionByPeer(peer);
+                if (existing != null && existing != holder[0] && existing.isConnected()) {
+                    holder[0].close();
+                    return;
+                }
+
                 connectedPeers.put(peer.getAddressKey(), holder[0]);
                 registerOrUpdatePeer(peer);
                 for (ConnectionListener l : listeners) l.onConnected(peer);
@@ -208,6 +288,18 @@ public class ConnectionManager {
 
             @Override
             public void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
+                onMessageReceived(peer, java.util.UUID.randomUUID().toString(), text, isEncrypted);
+            }
+
+            @Override
+            public void onMessageReceived(Peer peer, String messageId, String text, boolean isEncrypted) {
+                // Deduplicate incoming message
+                synchronized (processedMessageIds) {
+                    if (messageId != null && !processedMessageIds.add(messageId)) {
+                        return; // Duplicate message, ignore!
+                    }
+                }
+
                 String plainText = text;
                 if (isEncrypted) {
                     try {
@@ -217,7 +309,7 @@ public class ConnectionManager {
                     }
                 }
                 AudioNotifier.playMessageTing();
-                for (ConnectionListener l : listeners) l.onMessageReceived(peer, plainText, isEncrypted);
+                for (ConnectionListener l : listeners) l.onMessageReceived(peer, messageId, plainText, isEncrypted);
             }
 
             @Override
@@ -269,15 +361,20 @@ public class ConnectionManager {
     }
 
     public synchronized void registerOrUpdatePeer(Peer peer) {
+        if (nodeId.equals(peer.getId())) return;
+        if (peer.getIp().equals(NetworkUtil.getPrimaryLocalIP()) && peer.getPort() == listenPort) return;
+
         boolean found = false;
         for (Peer p : onlinePeers) {
-            if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
+            if (p.isSamePeer(peer)) {
                 p.setNickname(peer.getNickname());
                 p.setConnected(peer.isConnected());
                 p.setOnline(true);
                 p.setVoiceUdpPort(peer.getVoiceUdpPort());
                 p.setAutoDiscovered(peer.isAutoDiscovered());
                 p.setLastSeen(System.currentTimeMillis());
+                if (peer.getId() != null) p.setId(peer.getId());
+                if (peer.getPort() > 0) p.setPort(peer.getPort());
                 found = true;
                 break;
             }
@@ -296,6 +393,11 @@ public class ConnectionManager {
             return false;
         }
 
+        String messageId = java.util.UUID.randomUUID().toString();
+        synchronized (processedMessageIds) {
+            processedMessageIds.add(messageId);
+        }
+
         String payload = message;
         boolean encrypted = false;
 
@@ -311,7 +413,7 @@ public class ConnectionManager {
         boolean anySuccess = false;
         for (PeerConnection conn : connectedPeers.values()) {
             if (conn.isConnected()) {
-                boolean ok = conn.sendTextMessage(payload, encrypted);
+                boolean ok = conn.sendTextMessage(messageId, payload, encrypted);
                 if (ok) anySuccess = true;
             }
         }
@@ -328,6 +430,11 @@ public class ConnectionManager {
             return false;
         }
 
+        String messageId = java.util.UUID.randomUUID().toString();
+        synchronized (processedMessageIds) {
+            processedMessageIds.add(messageId);
+        }
+
         String payload = message;
         boolean encrypted = false;
         if (e2eeEnabled) {
@@ -337,7 +444,7 @@ public class ConnectionManager {
             } catch (Exception ignored) {}
         }
 
-        return conn.sendTextMessage(payload, encrypted);
+        return conn.sendTextMessage(messageId, payload, encrypted);
     }
 
     /**
@@ -425,7 +532,7 @@ public class ConnectionManager {
     public PeerConnection getPeerConnectionByPeer(Peer peer) {
         if (peer == null) return null;
         for (PeerConnection conn : connectedPeers.values()) {
-            if (conn.getPeer().getIp().equals(peer.getIp()) && conn.getPeer().getPort() == peer.getPort()) {
+            if (conn.isConnected() && conn.getPeer().isSamePeer(peer)) {
                 return conn;
             }
         }

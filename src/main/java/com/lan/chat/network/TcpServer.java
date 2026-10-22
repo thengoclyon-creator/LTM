@@ -25,10 +25,19 @@ public class TcpServer {
         this.onStatus = onStatus;
     }
 
+    public TcpServer(ServerSocket serverSocket, Consumer<Socket> onClientAccepted, Consumer<String> onStatus) {
+        this.serverSocket = serverSocket;
+        this.port = serverSocket != null ? serverSocket.getLocalPort() : 5000;
+        this.onClientAccepted = onClientAccepted;
+        this.onStatus = onStatus;
+    }
+
     public synchronized void start() throws IOException {
         if (listening) return;
 
-        serverSocket = new ServerSocket(port);
+        if (serverSocket == null || serverSocket.isClosed()) {
+            serverSocket = new ServerSocket(port);
+        }
         listening = true;
 
         serverThread = new Thread(this::listenLoop, "TcpServerThread-Port-" + port);
