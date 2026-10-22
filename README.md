@@ -42,7 +42,7 @@
 ## 📂 Danh Sách File & Cấu Trúc Mã Nguồn
 
 ```
-c:\DA WEB\LTM\
+LTM/
 ├── run.bat                          // Chạy 1 ứng dụng
 ├── run-two-instances.bat            // Mở 2 máy chat cục bộ (May_A & May_B)
 ├── run-three-instances.bat          // Mở 3 máy chat chung (May_A, May_B, May_C)
@@ -83,7 +83,7 @@ c:\DA WEB\LTM\
 
 ### Thử Nghiệm 3 Máy Chat Nhóm Cùng Lúc Trên 1 Máy Tính
 Nhấp đúp vào file:
-👉 **[run-three-instances.bat](file:///c:/DA%20WEB/LTM/run-three-instances.bat)**
+👉 **[run-three-instances.bat](file:///c:/Users/Admin/.gemini/antigravity-ide/scratch/LTM/run-three-instances.bat)** (hoặc **[run-two-instances.bat](file:///c:/Users/Admin/.gemini/antigravity-ide/scratch/LTM/run-two-instances.bat)**)
 
 1. Hệ thống sẽ mở 3 cửa sổ: **May_A** (cổng 5000), **May_B** (cổng 5001), **May_C** (cổng 5002).
 2. Dịch vụ **UDP Auto-Discovery** sẽ tự động phát hiện các máy và hiển thị trong danh sách.

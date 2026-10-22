@@ -2,12 +2,11 @@
 title LAN Chat Pro - Dual Test Runner
 chcp 65001 > nul
 
-set "JAVA_BIN=java"
-if exist "C:\Program Files\Apache NetBeans\jdk\bin\javaw.exe" (
-    set "JAVA_BIN=C:\Program Files\Apache NetBeans\jdk\bin\javaw.exe"
-) else if exist "C:\Program Files\Apache NetBeans\jdk\bin\java.exe" (
-    set "JAVA_BIN=C:\Program Files\Apache NetBeans\jdk\bin\java.exe"
-)
+set "JAVA_BIN="
+if exist "C:\Program Files\Apache NetBeans\jdk\bin\java.exe" set "JAVA_BIN=C:\Program Files\Apache NetBeans\jdk\bin\java.exe"
+if exist "%LOCALAPPDATA%\Programs\jdk-21\bin\java.exe" set "JAVA_BIN=%LOCALAPPDATA%\Programs\jdk-21\bin\java.exe"
+if not defined JAVA_BIN for /f "delims=" %%i in ('where java.exe 2^>nul') do if not defined JAVA_BIN set "JAVA_BIN=%%i"
+if not defined JAVA_BIN set "JAVA_BIN=java"
 
 echo [1/2] Dang khoi dong May_A (Port 5000)...
 start "LAN Chat - May A" "%JAVA_BIN%" --enable-native-access=ALL-UNNAMED -jar "%~dp0target\lan-chat-app-1.0.0.jar" "May_A" 5000
