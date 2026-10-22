@@ -21,4 +21,11 @@ public interface ConnectionListener {
     void onCallAccepted(Peer peer, int remoteUdpPort);
     void onCallRejected(Peer peer, String reason);
     void onCallHangup(Peer peer);
+
+    // Phase 5: Custom Group Room Callbacks
+    default void onRoomInviteReceived(com.lan.chat.model.ChatRoom room, String invitedBy) {}
+    default void onRoomRenamed(String roomId, String newRoomName, String updatedBy) {}
+    default void onRoomMembersUpdated(String roomId, java.util.List<String> newMembers, String updatedBy) {}
+    default void onRoomMessageReceived(String roomId, String senderNickname, String text, boolean isEncrypted) {}
+    default void onRoomVoiceNoteReceived(String roomId, String senderNickname, String fileName, int durationSeconds, byte[] audioData) {}
 }

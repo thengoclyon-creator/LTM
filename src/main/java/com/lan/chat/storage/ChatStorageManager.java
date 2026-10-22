@@ -1,5 +1,6 @@
 package com.lan.chat.storage;
 
+import com.lan.chat.model.ChatRoom;
 import com.lan.chat.model.Message;
 import com.lan.chat.model.MessageType;
 
@@ -221,5 +222,104 @@ public class ChatStorageManager {
         if (json.startsWith("true", start)) return true;
         if (json.startsWith("false", start)) return false;
         return def;
+    }
+
+    // ==========================================
+    // Phase 5: Room Persistence
+    // ==========================================
+
+    public synchronized void saveRooms(List<ChatRoom> rooms) {
+        File file = new File(userStorageDir, "rooms.jsonl");
+        try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file, false), StandardCharsets.UTF_8))) {
+            if (rooms != null) {
+                for (ChatRoom r : rooms) {
+                    bw.write(serializeRoom(r));
+                    bw.newLine();
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Lỗi lưu danh sách phòng: " + e.getMessage());
+        }
+    }
+
+    public synchronized void saveOrUpdateRoom(ChatRoom room) {
+        if (room == null) return;
+        List<ChatRoom> existing = loadRooms();
+        int foundIndex = -1;
+        for (int i = 0; i < existing.size(); i++) {
+            if (existing.get(i).getId().equals(room.getId())) {
+                foundIndex = i;
+                break;
+            }
+        }
+        if (foundIndex >= 0) {
+            existing.set(foundIndex, room);
+        } else {
+            existing.add(room);
+        }
+        saveRooms(existing);
+    }
+
+    public synchronized List<ChatRoom> loadRooms() {
+        List<ChatRoom> list = new ArrayList<>();
+        File file = new File(userStorageDir, "rooms.jsonl");
+        if (!file.exists()) return list;
+
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                ChatRoom room = deserializeRoom(line);
+                if (room != null) {
+                    list.add(room);
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Lỗi đọc danh sách phòng: " + e.getMessage());
+        }
+        return list;
+    }
+
+    public synchronized boolean deleteRoom(String roomId) {
+        if (roomId == null) return false;
+        List<ChatRoom> existing = loadRooms();
+        boolean removed = existing.removeIf(r -> r.getId().equals(roomId));
+        if (removed) {
+            saveRooms(existing);
+        }
+        clearHistory("ROOM_" + roomId);
+        return removed;
+    }
+
+    private static String serializeRoom(ChatRoom r) {
+        return String.format(
+                "{\"id\":\"%s\",\"name\":\"%s\",\"creator\":\"%s\",\"members\":\"%s\",\"createdAt\":%d}",
+                escapeJson(r.getId()),
+                escapeJson(r.getName()),
+                escapeJson(r.getCreator()),
+                escapeJson(String.join(",", r.getMembers())),
+                r.getCreatedAt()
+        );
+    }
+
+    private static ChatRoom deserializeRoom(String json) {
+        try {
+            String id = extractString(json, "id");
+            String name = extractString(json, "name");
+            String creator = extractString(json, "creator");
+            String membersRaw = extractString(json, "members");
+            long createdAt = extractLong(json, "createdAt", System.currentTimeMillis());
+
+            List<String> members = new ArrayList<>();
+            if (membersRaw != null && !membersRaw.isEmpty()) {
+                for (String m : membersRaw.split(",")) {
+                    if (!m.trim().isEmpty()) members.add(m.trim());
+                }
+            }
+            return new ChatRoom(id, name, creator, members, createdAt);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

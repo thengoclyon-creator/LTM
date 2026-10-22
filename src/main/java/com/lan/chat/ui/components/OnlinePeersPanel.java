@@ -1,81 +1,102 @@
 package com.lan.chat.ui.components;
 
+import com.lan.chat.model.ChatRoom;
+import com.lan.chat.model.ChatTarget;
 import com.lan.chat.model.Peer;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 public class OnlinePeersPanel extends JPanel {
 
-    // Sentinel peer representing Group / All LAN chat
-    public static final Peer GROUP_CHAT_PEER = new Peer("0.0.0.0", 0, "PHÒNG CHAT CHUNG (Tất cả)");
-
-    private final DefaultListModel<Peer> listModel = new DefaultListModel<>();
-    private final JList<Peer> peerJList = new JList<>(listModel);
-    private Consumer<Peer> onChatTargetSelected;
+    private final DefaultListModel<ChatTarget> listModel = new DefaultListModel<>();
+    private final JList<ChatTarget> targetJList = new JList<>(listModel);
+    private Consumer<ChatTarget> onTargetSelected;
     private Consumer<Peer> onPeerConnectRequest;
+    private Runnable onCreateRoomRequested;
 
     private final JLabel lblPeerCount = new JLabel("(0 online)");
 
     public OnlinePeersPanel() {
         setLayout(new BorderLayout());
         setBackground(new Color(248, 250, 252));
-        setPreferredSize(new Dimension(260, 0));
+        setPreferredSize(new Dimension(280, 0));
         setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, new Color(226, 232, 240)));
 
         // Header
-        JPanel headerPanel = new JPanel(new BorderLayout());
+        JPanel headerPanel = new JPanel(new BorderLayout(8, 0));
         headerPanel.setBackground(Color.WHITE);
         headerPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(226, 232, 240)),
-                BorderFactory.createEmptyBorder(12, 14, 12, 14)
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)
         ));
 
-        JLabel titleLabel = new JLabel("MẠNG NỘI BỘ LAN");
+        JPanel leftHeader = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        leftHeader.setOpaque(false);
+
+        JLabel titleLabel = new JLabel("HỘI THOẠI");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
         titleLabel.setForeground(new Color(15, 23, 42));
 
         lblPeerCount.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         lblPeerCount.setForeground(new Color(100, 116, 139));
 
-        headerPanel.add(titleLabel, BorderLayout.WEST);
-        headerPanel.add(lblPeerCount, BorderLayout.EAST);
+        leftHeader.add(titleLabel);
+        leftHeader.add(lblPeerCount);
+
+        JButton btnCreateRoom = new JButton("➕ Tạo nhóm");
+        btnCreateRoom.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnCreateRoom.setBackground(new Color(79, 70, 229));
+        btnCreateRoom.setForeground(Color.WHITE);
+        btnCreateRoom.setFocusPainted(false);
+        btnCreateRoom.setToolTipText("Tạo phòng chat riêng và chọn các thành viên tham gia");
+        btnCreateRoom.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        btnCreateRoom.addActionListener(e -> {
+            if (onCreateRoomRequested != null) {
+                onCreateRoomRequested.run();
+            }
+        });
+
+        headerPanel.add(leftHeader, BorderLayout.WEST);
+        headerPanel.add(btnCreateRoom, BorderLayout.EAST);
         add(headerPanel, BorderLayout.NORTH);
 
-        // Always put Group Chat as top item
-        listModel.addElement(GROUP_CHAT_PEER);
+        // Always put General Room (All LAN) as top item
+        listModel.addElement(ChatTarget.allLan());
 
         // List Configuration
-        peerJList.setBackground(new Color(248, 250, 252));
-        peerJList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        peerJList.setCellRenderer(new PeerCellRenderer());
-        peerJList.setSelectedIndex(0);
+        targetJList.setBackground(new Color(248, 250, 252));
+        targetJList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        targetJList.setCellRenderer(new TargetCellRenderer());
+        targetJList.setSelectedIndex(0);
 
-        peerJList.addListSelectionListener(e -> {
+        targetJList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                Peer selected = peerJList.getSelectedValue();
-                if (selected != null && onChatTargetSelected != null) {
-                    onChatTargetSelected.accept(selected.equals(GROUP_CHAT_PEER) ? null : selected);
+                ChatTarget selected = targetJList.getSelectedValue();
+                if (selected != null && onTargetSelected != null) {
+                    onTargetSelected.accept(selected);
                 }
             }
         });
 
-        peerJList.addMouseListener(new MouseAdapter() {
+        targetJList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
-                    Peer selected = peerJList.getSelectedValue();
-                    if (selected != null && !selected.equals(GROUP_CHAT_PEER) && onPeerConnectRequest != null) {
-                        onPeerConnectRequest.accept(selected);
+                    ChatTarget selected = targetJList.getSelectedValue();
+                    if (selected != null && selected.isPeer() && onPeerConnectRequest != null) {
+                        onPeerConnectRequest.accept(selected.getPeer());
                     }
                 }
             }
         });
 
-        JScrollPane scrollPane = new JScrollPane(peerJList);
+        JScrollPane scrollPane = new JScrollPane(targetJList);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.getViewport().setBackground(new Color(248, 250, 252));
         add(scrollPane, BorderLayout.CENTER);
@@ -92,7 +113,7 @@ public class OnlinePeersPanel extends JPanel {
         hint1.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         hint1.setForeground(new Color(5, 150, 105));
 
-        JLabel hint2 = new JLabel("Nhấp đúp thiết bị để kết nối", SwingConstants.CENTER);
+        JLabel hint2 = new JLabel("Hỗ trợ Phòng nhóm & Chat 1-1", SwingConstants.CENTER);
         hint2.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         hint2.setForeground(new Color(100, 116, 139));
 
@@ -101,95 +122,179 @@ public class OnlinePeersPanel extends JPanel {
         add(bottomHint, BorderLayout.SOUTH);
     }
 
-    public void setOnChatTargetSelected(Consumer<Peer> onChatTargetSelected) {
-        this.onChatTargetSelected = onChatTargetSelected;
+    public void setOnTargetSelected(Consumer<ChatTarget> onTargetSelected) {
+        this.onTargetSelected = onTargetSelected;
     }
 
     public void setOnPeerConnectRequest(Consumer<Peer> onPeerConnectRequest) {
         this.onPeerConnectRequest = onPeerConnectRequest;
     }
 
-    public Peer getSelectedTarget() {
-        Peer selected = peerJList.getSelectedValue();
-        return (selected == null || selected.equals(GROUP_CHAT_PEER)) ? null : selected;
+    public void setOnCreateRoomRequested(Runnable onCreateRoomRequested) {
+        this.onCreateRoomRequested = onCreateRoomRequested;
+    }
+
+    public ChatTarget getSelectedTarget() {
+        return targetJList.getSelectedValue();
+    }
+
+    public void selectTarget(ChatTarget target) {
+        SwingUtilities.invokeLater(() -> {
+            for (int i = 0; i < listModel.size(); i++) {
+                if (listModel.get(i).equals(target)) {
+                    targetJList.setSelectedIndex(i);
+                    targetJList.ensureIndexIsVisible(i);
+                    break;
+                }
+            }
+        });
+    }
+
+    public void selectRoom(ChatRoom room) {
+        if (room == null) return;
+        selectTarget(ChatTarget.forRoom(room));
+    }
+
+    public void addOrUpdateRoom(ChatRoom room) {
+        SwingUtilities.invokeLater(() -> {
+            int foundIndex = -1;
+            int firstPeerIndex = listModel.size();
+
+            for (int i = 1; i < listModel.size(); i++) {
+                ChatTarget t = listModel.get(i);
+                if (t.isRoom() && t.getRoom().getId().equals(room.getId())) {
+                    foundIndex = i;
+                    break;
+                }
+                if (t.isPeer() && firstPeerIndex == listModel.size()) {
+                    firstPeerIndex = i;
+                }
+            }
+
+            ChatTarget newTarget = ChatTarget.forRoom(room);
+            if (foundIndex >= 0) {
+                listModel.set(foundIndex, newTarget);
+            } else {
+                // Insert room before peers
+                listModel.add(firstPeerIndex, newTarget);
+            }
+            refreshList();
+        });
+    }
+
+    public void removeRoom(String roomId) {
+        SwingUtilities.invokeLater(() -> {
+            for (int i = 1; i < listModel.size(); i++) {
+                ChatTarget t = listModel.get(i);
+                if (t.isRoom() && t.getRoom().getId().equals(roomId)) {
+                    listModel.remove(i);
+                    break;
+                }
+            }
+            refreshList();
+        });
     }
 
     public void addOrUpdatePeer(Peer peer) {
         SwingUtilities.invokeLater(() -> {
-            int index = -1;
-            for (int i = 1; i < listModel.size(); i++) { // Skip group chat item at 0
-                Peer p = listModel.get(i);
-                if ((p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort())
-                        || (p.getNickname().equalsIgnoreCase(peer.getNickname()))) {
-                    index = i;
-                    break;
+            int foundIndex = -1;
+            for (int i = 1; i < listModel.size(); i++) {
+                ChatTarget t = listModel.get(i);
+                if (t.isPeer()) {
+                    Peer p = t.getPeer();
+                    if ((p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort())
+                            || (p.getNickname().equalsIgnoreCase(peer.getNickname()))) {
+                        foundIndex = i;
+                        break;
+                    }
                 }
             }
-            if (index >= 0) {
-                listModel.set(index, peer);
+
+            ChatTarget target = ChatTarget.forPeer(peer);
+            if (foundIndex >= 0) {
+                listModel.set(foundIndex, target);
             } else {
-                listModel.addElement(peer);
+                listModel.addElement(target);
             }
             updateCountLabel();
+            refreshList();
         });
     }
 
     public void removePeer(Peer peer) {
         SwingUtilities.invokeLater(() -> {
             for (int i = 1; i < listModel.size(); i++) {
-                Peer p = listModel.get(i);
-                if ((p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort())
-                        || (p.getNickname().equalsIgnoreCase(peer.getNickname()))) {
-                    listModel.remove(i);
-                    break;
+                ChatTarget t = listModel.get(i);
+                if (t.isPeer()) {
+                    Peer p = t.getPeer();
+                    if ((p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort())
+                            || (p.getNickname().equalsIgnoreCase(peer.getNickname()))) {
+                        listModel.remove(i);
+                        break;
+                    }
                 }
             }
             updateCountLabel();
+            refreshList();
         });
+    }
+
+    public List<Peer> getAvailablePeers() {
+        List<Peer> peers = new ArrayList<>();
+        for (int i = 1; i < listModel.size(); i++) {
+            ChatTarget t = listModel.get(i);
+            if (t.isPeer() && t.getPeer() != null) {
+                peers.add(t.getPeer());
+            }
+        }
+        return peers;
     }
 
     private void updateCountLabel() {
         int onlineCount = 0;
         for (int i = 1; i < listModel.size(); i++) {
-            Peer p = listModel.get(i);
-            if (p.isConnected() || p.isOnline()) {
-                onlineCount++;
+            ChatTarget t = listModel.get(i);
+            if (t.isPeer()) {
+                Peer p = t.getPeer();
+                if (p.isConnected() || p.isOnline()) {
+                    onlineCount++;
+                }
             }
         }
         lblPeerCount.setText("(" + onlineCount + " online)");
     }
 
     public void refreshList() {
-        SwingUtilities.invokeLater(peerJList::repaint);
+        SwingUtilities.invokeLater(targetJList::repaint);
     }
 
-    private static class PeerCellRenderer extends JPanel implements ListCellRenderer<Peer> {
+    private static class TargetCellRenderer extends JPanel implements ListCellRenderer<ChatTarget> {
         private final JLabel lblBadge = new JLabel();
         private final JLabel lblName = new JLabel();
-        private final JLabel lblIp = new JLabel();
+        private final JLabel lblDesc = new JLabel();
         private final JLabel lblStatus = new JLabel();
 
-        public PeerCellRenderer() {
-            setLayout(new BorderLayout(10, 2));
+        public TargetCellRenderer() {
+            setLayout(new BorderLayout(8, 2));
             setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createEmptyBorder(4, 8, 4, 8),
-                    BorderFactory.createEmptyBorder(6, 8, 6, 8)
+                    BorderFactory.createEmptyBorder(3, 6, 3, 6),
+                    BorderFactory.createEmptyBorder(5, 6, 5, 6)
             ));
 
-            lblBadge.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            lblBadge.setFont(new Font("Segoe UI", Font.BOLD, 10));
             lblBadge.setHorizontalAlignment(SwingConstants.CENTER);
-            lblBadge.setPreferredSize(new Dimension(36, 32));
+            lblBadge.setPreferredSize(new Dimension(42, 32));
             lblBadge.setOpaque(true);
 
             JPanel textPanel = new JPanel(new GridLayout(2, 1, 0, 2));
             textPanel.setOpaque(false);
 
             lblName.setFont(new Font("Segoe UI", Font.BOLD, 12));
-            lblIp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            lblDesc.setFont(new Font("Segoe UI", Font.PLAIN, 11));
             lblStatus.setFont(new Font("Segoe UI", Font.BOLD, 11));
 
             textPanel.add(lblName);
-            textPanel.add(lblIp);
+            textPanel.add(lblDesc);
 
             add(lblBadge, BorderLayout.WEST);
             add(textPanel, BorderLayout.CENTER);
@@ -197,9 +302,9 @@ public class OnlinePeersPanel extends JPanel {
         }
 
         @Override
-        public Component getListCellRendererComponent(JList<? extends Peer> list, Peer peer, int index,
-                                                      boolean isSelected, boolean cellHasFocus) {
-            if (peer.equals(GROUP_CHAT_PEER)) {
+        public Component getListCellRendererComponent(JList<? extends ChatTarget> list, ChatTarget target,
+                                                      int index, boolean isSelected, boolean cellHasFocus) {
+            if (target.isAllLan()) {
                 lblBadge.setText("ALL");
                 lblBadge.setBackground(new Color(224, 231, 255));
                 lblBadge.setForeground(new Color(67, 56, 202));
@@ -207,18 +312,38 @@ public class OnlinePeersPanel extends JPanel {
                 lblName.setText("Phòng Chat Chung");
                 lblName.setForeground(new Color(67, 56, 202));
 
-                lblIp.setText("Gửi tin tới mọi máy LAN");
-                lblIp.setForeground(new Color(100, 116, 139));
+                lblDesc.setText("Gửi tin tới mọi máy LAN");
+                lblDesc.setForeground(new Color(100, 116, 139));
 
                 lblStatus.setText("● Tất cả");
                 lblStatus.setForeground(new Color(79, 70, 229));
 
-                if (isSelected) {
-                    setBackground(new Color(224, 231, 255));
+                setBackground(isSelected ? new Color(224, 231, 255) : new Color(238, 242, 255));
+
+            } else if (target.isRoom()) {
+                ChatRoom room = target.getRoom();
+                lblBadge.setText("NHÓM");
+                lblBadge.setBackground(new Color(209, 250, 229));
+                lblBadge.setForeground(new Color(5, 150, 105));
+
+                lblName.setText(room.getName());
+                lblName.setForeground(new Color(15, 23, 42));
+
+                lblDesc.setText(room.getMembers().size() + " TV: " + room.getMembersSummary());
+                lblDesc.setForeground(new Color(100, 116, 139));
+
+                if (room.getUnreadCount() > 0) {
+                    lblStatus.setText("● " + room.getUnreadCount() + " tin mới");
+                    lblStatus.setForeground(new Color(220, 38, 38));
                 } else {
-                    setBackground(new Color(238, 242, 255));
+                    lblStatus.setText("👥 Nhóm");
+                    lblStatus.setForeground(new Color(16, 185, 129));
                 }
+
+                setBackground(isSelected ? new Color(224, 231, 255) : Color.WHITE);
+
             } else {
+                Peer peer = target.getPeer();
                 lblBadge.setText("LAN");
                 lblBadge.setBackground(new Color(241, 245, 249));
                 lblBadge.setForeground(new Color(71, 85, 105));
@@ -226,8 +351,8 @@ public class OnlinePeersPanel extends JPanel {
                 lblName.setText(peer.getNickname());
                 lblName.setForeground(new Color(15, 23, 42));
 
-                lblIp.setText(peer.getIp() + ":" + peer.getPort());
-                lblIp.setForeground(new Color(100, 116, 139));
+                lblDesc.setText(peer.getIp() + ":" + peer.getPort());
+                lblDesc.setForeground(new Color(100, 116, 139));
 
                 if (peer.getUnreadCount() > 0) {
                     lblStatus.setText("● " + peer.getUnreadCount() + " tin mới");
@@ -243,12 +368,9 @@ public class OnlinePeersPanel extends JPanel {
                     lblStatus.setForeground(new Color(148, 163, 184));
                 }
 
-                if (isSelected) {
-                    setBackground(new Color(224, 231, 255));
-                } else {
-                    setBackground(Color.WHITE);
-                }
+                setBackground(isSelected ? new Color(224, 231, 255) : Color.WHITE);
             }
+
             return this;
         }
     }

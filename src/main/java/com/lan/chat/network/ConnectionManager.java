@@ -1,5 +1,6 @@
 package com.lan.chat.network;
 
+import com.lan.chat.model.ChatRoom;
 import com.lan.chat.model.FileTransferTask;
 import com.lan.chat.model.Peer;
 import com.lan.chat.util.AudioNotifier;
@@ -234,6 +235,42 @@ public class ConnectionManager {
             }
 
             @Override
+            public void onRoomInviteReceived(ChatRoom room, String invitedBy) {
+                AudioNotifier.playMessageTing();
+                for (ConnectionListener l : listeners) l.onRoomInviteReceived(room, invitedBy);
+            }
+
+            @Override
+            public void onRoomRenamed(String roomId, String newRoomName, String updatedBy) {
+                for (ConnectionListener l : listeners) l.onRoomRenamed(roomId, newRoomName, updatedBy);
+            }
+
+            @Override
+            public void onRoomMembersUpdated(String roomId, List<String> newMembers, String updatedBy) {
+                for (ConnectionListener l : listeners) l.onRoomMembersUpdated(roomId, newMembers, updatedBy);
+            }
+
+            @Override
+            public void onRoomMessageReceived(String roomId, String senderNickname, String text, boolean isEncrypted) {
+                String plainText = text;
+                if (isEncrypted) {
+                    try {
+                        plainText = SecurityUtil.decrypt(text);
+                    } catch (Exception e) {
+                        plainText = "[Không thể giải mã: " + e.getMessage() + "]";
+                    }
+                }
+                AudioNotifier.playMessageTing();
+                for (ConnectionListener l : listeners) l.onRoomMessageReceived(roomId, senderNickname, plainText, isEncrypted);
+            }
+
+            @Override
+            public void onRoomVoiceNoteReceived(String roomId, String senderNickname, String fileName, int durationSeconds, byte[] audioData) {
+                AudioNotifier.playMessageTing();
+                for (ConnectionListener l : listeners) l.onRoomVoiceNoteReceived(roomId, senderNickname, fileName, durationSeconds, audioData);
+            }
+
+            @Override
             public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {
                 AudioNotifier.playMessageTing();
                 for (ConnectionListener l : listeners) l.onFileOfferReceived(peer, fileId, fileName, totalSize);
@@ -382,6 +419,79 @@ public class ConnectionManager {
             return false;
         }
         return conn.sendVoiceNote(fileName, durationSeconds, audioData, false);
+    }
+
+    // ==========================================
+    // Phase 5: Room Broadcasting Methods
+    // ==========================================
+
+    public boolean sendRoomTextMessage(ChatRoom room, String message) {
+        if (room == null || message == null || message.trim().isEmpty()) return false;
+        String payload = message;
+        boolean encrypted = false;
+        if (e2eeEnabled) {
+            try {
+                payload = SecurityUtil.encrypt(message);
+                encrypted = true;
+            } catch (Exception ignored) {}
+        }
+
+        boolean anySent = false;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
+                if (conn.sendRoomTextMessage(room.getId(), nickname, payload, encrypted)) {
+                    anySent = true;
+                }
+            }
+        }
+        return anySent || !connectedPeers.isEmpty();
+    }
+
+    public boolean sendRoomVoiceNote(ChatRoom room, String fileName, int durationSeconds, byte[] audioData) {
+        if (room == null || audioData == null) return false;
+        boolean anySent = false;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
+                if (conn.sendRoomVoiceNote(room.getId(), nickname, fileName, durationSeconds, audioData)) {
+                    anySent = true;
+                }
+            }
+        }
+        return anySent || !connectedPeers.isEmpty();
+    }
+
+    public void broadcastRoomInvite(ChatRoom room) {
+        if (room == null) return;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
+                conn.sendRoomInvite(room);
+            }
+        }
+    }
+
+    public void sendRoomInviteToPeer(Peer peer, ChatRoom room) {
+        PeerConnection conn = getPeerConnectionByPeer(peer);
+        if (conn != null && conn.isConnected()) {
+            conn.sendRoomInvite(room);
+        }
+    }
+
+    public void broadcastRoomRename(ChatRoom room) {
+        if (room == null) return;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
+                conn.sendRoomRename(room.getId(), room.getName(), nickname);
+            }
+        }
+    }
+
+    public void broadcastRoomMemberUpdate(ChatRoom room) {
+        if (room == null) return;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
+                conn.sendRoomMemberUpdate(room.getId(), room.getMembers(), nickname);
+            }
+        }
     }
 
     /**

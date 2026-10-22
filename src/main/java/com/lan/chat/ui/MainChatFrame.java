@@ -1,5 +1,7 @@
 package com.lan.chat.ui;
 
+import com.lan.chat.model.ChatRoom;
+import com.lan.chat.model.ChatTarget;
 import com.lan.chat.model.FileTransferTask;
 import com.lan.chat.model.Message;
 import com.lan.chat.model.Peer;
@@ -9,6 +11,8 @@ import com.lan.chat.network.PeerConnection;
 import com.lan.chat.ui.components.ChatHistoryPanel;
 import com.lan.chat.ui.components.FileTransferBar;
 import com.lan.chat.ui.components.OnlinePeersPanel;
+import com.lan.chat.ui.dialogs.CreateRoomDialog;
+import com.lan.chat.ui.dialogs.ManageMembersDialog;
 import com.lan.chat.util.AudioNotifier;
 import com.lan.chat.util.NetworkUtil;
 import com.lan.chat.storage.ChatStorageManager;
@@ -31,7 +35,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
     private final ConnectionManager connectionManager;
     private final ChatStorageManager chatStorageManager;
-    private Peer activeTargetPeer = null; // null = Broadcast to all (Group Chat)
+    private ChatTarget activeTarget = ChatTarget.allLan();
     private static final String GROUP_CHANNEL = "GROUP";
     private final Map<String, List<Message>> conversationHistories = new ConcurrentHashMap<>();
 
@@ -49,6 +53,16 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     private ChatHistoryPanel chatHistoryPanel;
     private FileTransferBar fileTransferBar;
     private JLabel lblActivePeerStatus;
+    private JButton btnRenameRoom;
+    private JButton btnManageMembers;
+
+    public Peer getActivePeer() {
+        return activeTarget != null && activeTarget.isPeer() ? activeTarget.getPeer() : null;
+    }
+
+    public ChatRoom getActiveRoom() {
+        return activeTarget != null && activeTarget.isRoom() ? activeTarget.getRoom() : null;
+    }
 
     // Voice Call Controls
     private JButton btnCall;
@@ -197,7 +211,8 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
         // Left sidebar: Online devices list with Group Chat support
         peersPanel = new OnlinePeersPanel();
-        peersPanel.setOnChatTargetSelected(this::switchChatTarget);
+        peersPanel.setOnTargetSelected(this::switchChatTarget);
+        peersPanel.setOnCreateRoomRequested(this::showCreateRoomDialog);
         peersPanel.setOnPeerConnectRequest(peer -> {
             txtTargetIp.setText(peer.getIp());
             txtTargetPort.setText(String.valueOf(peer.getPort()));
@@ -223,6 +238,24 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         // Voice call action buttons
         JPanel voiceActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         voiceActions.setOpaque(false);
+
+        btnRenameRoom = new JButton("✏️ Đổi tên");
+        btnRenameRoom.setToolTipText("Đổi tên nhóm này");
+        btnRenameRoom.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnRenameRoom.setBackground(new Color(241, 245, 249));
+        btnRenameRoom.setForeground(new Color(67, 56, 202));
+        btnRenameRoom.setFocusPainted(false);
+        btnRenameRoom.setVisible(false);
+        btnRenameRoom.addActionListener(e -> showRenameRoomDialog());
+
+        btnManageMembers = new JButton("👥 Thành viên");
+        btnManageMembers.setToolTipText("Xem & quản lý thành viên trong nhóm");
+        btnManageMembers.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnManageMembers.setBackground(new Color(241, 245, 249));
+        btnManageMembers.setForeground(new Color(5, 150, 105));
+        btnManageMembers.setFocusPainted(false);
+        btnManageMembers.setVisible(false);
+        btnManageMembers.addActionListener(e -> showManageMembersDialog());
 
         lblCallBanner = new JLabel("");
         lblCallBanner.setFont(new Font("Segoe UI", Font.BOLD, 11));
@@ -259,6 +292,8 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         btnClearHistory.setFocusPainted(false);
         btnClearHistory.addActionListener(e -> clearCurrentConversation());
 
+        voiceActions.add(btnRenameRoom);
+        voiceActions.add(btnManageMembers);
         voiceActions.add(btnClearHistory);
         voiceActions.add(lblCallBanner);
         voiceActions.add(btnCall);
@@ -274,7 +309,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         // Upgraded FileTransferBar with Resume and Pause actions
         fileTransferBar = new FileTransferBar();
         fileTransferBar.setOnPauseResumeAction(task -> {
-            PeerConnection conn = connectionManager.getPeerConnectionByPeer(activeTargetPeer);
+            PeerConnection conn = connectionManager.getPeerConnectionByPeer(getActivePeer());
             if (conn != null) {
                 if (task.getStatus() == FileTransferTask.Status.PAUSED) {
                     conn.resumeFileTransfer(task.getFileId());
@@ -470,11 +505,20 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     }
 
     private void loadSavedHistories() {
-        // 1. Preload Group Chat messages
+        // 1. Preload General Group Chat messages
         List<Message> groupMsgs = chatStorageManager.loadMessages(GROUP_CHANNEL);
         conversationHistories.put(GROUP_CHANNEL, new CopyOnWriteArrayList<>(groupMsgs));
 
-        // 2. Preload past peer conversations (Zalo/Messenger style)
+        // 2. Preload custom group rooms
+        List<ChatRoom> savedRooms = chatStorageManager.loadRooms();
+        for (ChatRoom room : savedRooms) {
+            String channelKey = "ROOM_" + room.getId();
+            List<Message> msgs = chatStorageManager.loadMessages(channelKey);
+            conversationHistories.put(channelKey, new CopyOnWriteArrayList<>(msgs));
+            peersPanel.addOrUpdateRoom(room);
+        }
+
+        // 3. Preload past peer conversations (Zalo/Messenger style)
         List<String> savedPeers = chatStorageManager.getSavedPeerKeys();
         for (String peerName : savedPeers) {
             String channelKey = "PEER_" + peerName;
@@ -499,14 +543,14 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     }
 
     private String getActiveChannelKey() {
-        return getChannelKeyForPeer(activeTargetPeer);
+        return activeTarget != null ? activeTarget.getKey() : GROUP_CHANNEL;
     }
 
     private void clearCurrentConversation() {
-        String targetName = activeTargetPeer == null ? "Phòng Chat Chung" : activeTargetPeer.getNickname();
+        String targetName = activeTarget.getDisplayName();
         int choice = JOptionPane.showConfirmDialog(
                 this,
-                "Bạn có chắc chắn muốn xóa toàn bộ lịch sử tin nhắn với " + targetName + "?",
+                "Bạn có chắc chắn muốn xóa toàn bộ lịch sử tin nhắn của '" + targetName + "'?",
                 "Xác nhận xóa lịch sử",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE
@@ -522,9 +566,10 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         }
     }
 
-    private void switchChatTarget(Peer peer) {
-        this.activeTargetPeer = peer;
-        if (peer != null) {
+    private void switchChatTarget(ChatTarget target) {
+        this.activeTarget = target != null ? target : ChatTarget.allLan();
+        if (activeTarget.isPeer()) {
+            Peer peer = activeTarget.getPeer();
             peer.clearUnread();
             peersPanel.refreshList();
 
@@ -532,6 +577,10 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             if (!peer.isConnected() && peer.isOnline()) {
                 connectionManager.connectToPeer(peer.getIp(), peer.getPort());
             }
+        } else if (activeTarget.isRoom()) {
+            ChatRoom room = activeTarget.getRoom();
+            room.clearUnread();
+            peersPanel.refreshList();
         }
         updateChatTargetBanner();
         refreshCurrentConversationView();
@@ -541,29 +590,48 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         String channelKey = getActiveChannelKey();
         List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
         String notice;
-        if (activeTargetPeer == null) {
+        if (activeTarget.isAllLan()) {
             notice = "📢 PHÒNG CHAT CHUNG LAN: Gửi tin tới tất cả thiết bị đang online.";
+        } else if (activeTarget.isRoom()) {
+            ChatRoom r = activeTarget.getRoom();
+            notice = "👥 NHÓM: " + r.getName() + " (" + r.getMembers().size() + " thành viên: " + r.getMembersSummary() + ")";
         } else {
-            notice = "🔒 CHAT RIÊNG VỚI " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getAddressKey() + "). Cuộc trò chuyện riêng tư 1-1.";
+            Peer p = activeTarget.getPeer();
+            notice = "🔒 CHAT RIÊNG VỚI " + p.getNickname() + " (" + p.getAddressKey() + "). Cuộc trò chuyện riêng tư 1-1.";
         }
         chatHistoryPanel.renderConversation(history, notice);
     }
 
     private void updateChatTargetBanner() {
-        if (activeTargetPeer == null) {
+        if (activeTarget.isAllLan()) {
             lblActivePeerStatus.setText("PHÒNG CHAT CHUNG - Gửi tin tới tất cả thiết bị LAN");
             lblActivePeerStatus.setForeground(new Color(15, 23, 42));
+            btnCall.setVisible(false);
+            btnRenameRoom.setVisible(false);
+            btnManageMembers.setVisible(false);
+        } else if (activeTarget.isRoom()) {
+            ChatRoom r = activeTarget.getRoom();
+            lblActivePeerStatus.setText("NHÓM: " + r.getName() + " • " + r.getMembers().size() + " thành viên (" + r.getMembersSummary() + ")");
+            lblActivePeerStatus.setForeground(new Color(5, 150, 105));
+            btnCall.setVisible(false);
+            btnRenameRoom.setVisible(true);
+            btnManageMembers.setVisible(true);
+            btnManageMembers.setText("👥 Thành viên (" + r.getMembers().size() + ")");
         } else {
+            Peer p = activeTarget.getPeer();
             String connStatus;
-            if (activeTargetPeer.isConnected()) {
+            if (p.isConnected()) {
                 connStatus = "Đã nối trực tiếp 1-1";
-            } else if (activeTargetPeer.isOnline()) {
+            } else if (p.isOnline()) {
                 connStatus = "Đang kết nối...";
             } else {
                 connStatus = "Ngoại tuyến (Offline)";
             }
-            lblActivePeerStatus.setText("CHAT RIÊNG: " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getAddressKey() + ") • " + connStatus);
+            lblActivePeerStatus.setText("CHAT RIÊNG: " + p.getNickname() + " (" + p.getAddressKey() + ") • " + connStatus);
             lblActivePeerStatus.setForeground(new Color(67, 56, 202));
+            btnCall.setVisible(true);
+            btnRenameRoom.setVisible(false);
+            btnManageMembers.setVisible(false);
         }
     }
 
@@ -626,15 +694,22 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         String channelKey;
         String myPrefix;
 
-        if (activeTargetPeer == null) {
+        if (activeTarget.isAllLan()) {
             // Group Chat: Broadcast to all connected peers
             sent = connectionManager.broadcastTextMessage(text);
             channelKey = GROUP_CHANNEL;
             myPrefix = "Bạn [Chung]";
+        } else if (activeTarget.isRoom()) {
+            // Custom Private Group Room
+            ChatRoom room = activeTarget.getRoom();
+            sent = connectionManager.sendRoomTextMessage(room, text);
+            channelKey = activeTarget.getKey();
+            myPrefix = "Bạn [" + room.getName() + "]";
         } else {
-            // Private Chat: Send to specific target peer
-            sent = connectionManager.sendPrivateMessage(activeTargetPeer, text);
-            channelKey = getActiveChannelKey();
+            // Private 1-1 Chat: Send to specific target peer
+            Peer p = activeTarget.getPeer();
+            sent = connectionManager.sendPrivateMessage(p, text);
+            channelKey = activeTarget.getKey();
             myPrefix = "Bạn [Chat riêng]";
         }
 
@@ -660,7 +735,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         if (res == JFileChooser.APPROVE_OPTION) {
             File file = chooser.getSelectedFile();
             if (file != null && file.exists()) {
-                FileTransferTask task = connectionManager.sendFileToPeer(activeTargetPeer, file);
+                FileTransferTask task = connectionManager.sendFileToPeer(getActivePeer(), file);
                 if (task != null) {
                     fileTransferBar.updateTask(task);
                     chatHistoryPanel.appendSystem("Đã gửi lời mời truyền file: " + file.getName()
@@ -671,7 +746,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     }
 
     private void initiateVoiceCall() {
-        Peer target = activeTargetPeer;
+        Peer target = getActivePeer();
         if (target == null) {
             if (!connectionManager.getConnectedPeers().isEmpty()) {
                 target = connectionManager.getConnectedPeers().iterator().next().getPeer();
@@ -679,7 +754,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         }
 
         if (target == null) {
-            JOptionPane.showMessageDialog(this, "Vui lòng chọn 1 thiết bị đã kết nối bên trái để bắt đầu cuộc gọi thoại!",
+            JOptionPane.showMessageDialog(this, "Vui lòng chọn 1 thiết bị 1-1 bên trái để bắt đầu cuộc gọi thoại!",
                     "Chưa chọn đối phương", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
@@ -903,13 +978,19 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         String channelKey;
         String myPrefix;
 
-        if (activeTargetPeer == null) {
+        if (activeTarget.isAllLan()) {
             sent = connectionManager.broadcastVoiceNote(fileName, duration, audioBytes);
             channelKey = GROUP_CHANNEL;
             myPrefix = "Bạn [Chung]";
+        } else if (activeTarget.isRoom()) {
+            ChatRoom room = activeTarget.getRoom();
+            sent = connectionManager.sendRoomVoiceNote(room, fileName, duration, audioBytes);
+            channelKey = activeTarget.getKey();
+            myPrefix = "Bạn [" + room.getName() + "]";
         } else {
-            sent = connectionManager.sendPrivateVoiceNote(activeTargetPeer, fileName, duration, audioBytes);
-            channelKey = getActiveChannelKey();
+            Peer p = activeTarget.getPeer();
+            sent = connectionManager.sendPrivateVoiceNote(p, fileName, duration, audioBytes);
+            channelKey = activeTarget.getKey();
             myPrefix = "Bạn [Chat riêng]";
         }
 
@@ -953,6 +1034,207 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         });
     }
 
+    // ==========================================
+    // Phase 5: Room Actions & Dialogs
+    // ==========================================
+
+    private void showCreateRoomDialog() {
+        CreateRoomDialog dialog = new CreateRoomDialog(this, connectionManager.getNickname(), peersPanel.getAvailablePeers());
+        dialog.setVisible(true);
+        ChatRoom newRoom = dialog.getCreatedRoom();
+        if (newRoom != null) {
+            chatStorageManager.saveOrUpdateRoom(newRoom);
+            peersPanel.addOrUpdateRoom(newRoom);
+            connectionManager.broadcastRoomInvite(newRoom);
+            switchChatTarget(ChatTarget.forRoom(newRoom));
+
+            Message sysMsg = Message.systemInfo("🎉 Bạn đã tạo phòng riêng '" + newRoom.getName()
+                    + "' với các thành viên: " + newRoom.getMembersSummary());
+            String channelKey = "ROOM_" + newRoom.getId();
+            conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>()).add(sysMsg);
+            chatStorageManager.appendMessage(channelKey, sysMsg);
+            chatHistoryPanel.appendMessage(sysMsg);
+        }
+    }
+
+    private void showRenameRoomDialog() {
+        ChatRoom room = getActiveRoom();
+        if (room == null) return;
+        String newName = JOptionPane.showInputDialog(this, "Nhập tên mới cho nhóm:", room.getName());
+        if (newName != null && !newName.trim().isEmpty() && !newName.trim().equals(room.getName())) {
+            String oldName = room.getName();
+            room.setName(newName.trim());
+            chatStorageManager.saveOrUpdateRoom(room);
+            peersPanel.addOrUpdateRoom(room);
+            connectionManager.broadcastRoomRename(room);
+            updateChatTargetBanner();
+
+            Message sysMsg = Message.systemInfo("Bạn đã đổi tên nhóm '" + oldName + "' thành '" + room.getName() + "'");
+            String channelKey = getActiveChannelKey();
+            conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>()).add(sysMsg);
+            chatStorageManager.appendMessage(channelKey, sysMsg);
+            chatHistoryPanel.appendMessage(sysMsg);
+        }
+    }
+
+    private void showManageMembersDialog() {
+        ChatRoom room = getActiveRoom();
+        if (room == null) return;
+        ManageMembersDialog dialog = new ManageMembersDialog(this, room, connectionManager.getNickname(), peersPanel.getAvailablePeers());
+        dialog.setVisible(true);
+        if (dialog.isMembersChanged()) {
+            chatStorageManager.saveOrUpdateRoom(room);
+            peersPanel.addOrUpdateRoom(room);
+            connectionManager.broadcastRoomMemberUpdate(room);
+            connectionManager.broadcastRoomInvite(room);
+            updateChatTargetBanner();
+
+            Message sysMsg = Message.systemInfo("Đã cập nhật danh sách thành viên: " + room.getMembersSummary());
+            String channelKey = getActiveChannelKey();
+            conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>()).add(sysMsg);
+            chatStorageManager.appendMessage(channelKey, sysMsg);
+            chatHistoryPanel.appendMessage(sysMsg);
+        }
+    }
+
+    // ==========================================
+    // Phase 5: Room Event Callbacks
+    // ==========================================
+
+    @Override
+    public void onRoomInviteReceived(ChatRoom room, String invitedBy) {
+        SwingUtilities.invokeLater(() -> {
+            chatStorageManager.saveOrUpdateRoom(room);
+            peersPanel.addOrUpdateRoom(room);
+
+            String channelKey = "ROOM_" + room.getId();
+            Message sysMsg = Message.systemInfo("👋 " + invitedBy + " đã thêm bạn vào nhóm '" + room.getName() + "'");
+            conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey))).add(sysMsg);
+            chatStorageManager.appendMessage(channelKey, sysMsg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(sysMsg);
+            } else {
+                room.incrementUnread();
+                peersPanel.refreshList();
+            }
+        });
+    }
+
+    @Override
+    public void onRoomRenamed(String roomId, String newRoomName, String updatedBy) {
+        SwingUtilities.invokeLater(() -> {
+            ChatRoom targetRoom = null;
+            for (ChatRoom r : chatStorageManager.loadRooms()) {
+                if (r.getId().equals(roomId)) {
+                    targetRoom = r;
+                    break;
+                }
+            }
+            if (targetRoom != null) {
+                String oldName = targetRoom.getName();
+                targetRoom.setName(newRoomName);
+                chatStorageManager.saveOrUpdateRoom(targetRoom);
+                peersPanel.addOrUpdateRoom(targetRoom);
+
+                String channelKey = "ROOM_" + roomId;
+                Message sysMsg = Message.systemInfo("✏️ " + updatedBy + " đã đổi tên nhóm '" + oldName + "' thành '" + newRoomName + "'");
+                conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey))).add(sysMsg);
+                chatStorageManager.appendMessage(channelKey, sysMsg);
+
+                if (getActiveChannelKey().equals(channelKey)) {
+                    updateChatTargetBanner();
+                    chatHistoryPanel.appendMessage(sysMsg);
+                }
+            }
+        });
+    }
+
+    @Override
+    public void onRoomMembersUpdated(String roomId, List<String> newMembers, String updatedBy) {
+        SwingUtilities.invokeLater(() -> {
+            ChatRoom targetRoom = null;
+            for (ChatRoom r : chatStorageManager.loadRooms()) {
+                if (r.getId().equals(roomId)) {
+                    targetRoom = r;
+                    break;
+                }
+            }
+            if (targetRoom != null) {
+                targetRoom.setMembers(newMembers);
+                chatStorageManager.saveOrUpdateRoom(targetRoom);
+                peersPanel.addOrUpdateRoom(targetRoom);
+
+                String channelKey = "ROOM_" + roomId;
+                Message sysMsg = Message.systemInfo("👥 " + updatedBy + " đã cập nhật thành viên nhóm: " + targetRoom.getMembersSummary());
+                conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey))).add(sysMsg);
+                chatStorageManager.appendMessage(channelKey, sysMsg);
+
+                if (getActiveChannelKey().equals(channelKey)) {
+                    updateChatTargetBanner();
+                    chatHistoryPanel.appendMessage(sysMsg);
+                }
+            }
+        });
+    }
+
+    @Override
+    public void onRoomMessageReceived(String roomId, String senderNickname, String text, boolean isEncrypted) {
+        SwingUtilities.invokeLater(() -> {
+            String channelKey = "ROOM_" + roomId;
+            Message msg = Message.userText(senderNickname, text, false, isEncrypted);
+
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
+            history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
+            } else {
+                for (ChatRoom r : chatStorageManager.loadRooms()) {
+                    if (r.getId().equals(roomId)) {
+                        r.incrementUnread();
+                        peersPanel.addOrUpdateRoom(r);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    @Override
+    public void onRoomVoiceNoteReceived(String roomId, String senderNickname, String fileName, int durationSeconds, byte[] audioData) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                File dir = new File(VOICE_DIR);
+                if (!dir.exists()) dir.mkdirs();
+                File targetFile = new File(dir, fileName);
+                Files.write(targetFile.toPath(), audioData);
+            } catch (Exception e) {
+                System.err.println("Lỗi lưu file voice note nhận được: " + e.getMessage());
+            }
+
+            String channelKey = "ROOM_" + roomId;
+            Message msg = Message.voiceNote(senderNickname, fileName, durationSeconds, false);
+
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
+            history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
+            } else {
+                for (ChatRoom r : chatStorageManager.loadRooms()) {
+                    if (r.getId().equals(roomId)) {
+                        r.incrementUnread();
+                        peersPanel.addOrUpdateRoom(r);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
     @Override
     public void onVoiceNoteReceived(Peer peer, String fileName, int durationSeconds, byte[] audioData, boolean isGroup) {
         SwingUtilities.invokeLater(() -> {
@@ -973,7 +1255,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
                 channelKey = GROUP_CHANNEL;
                 msg = Message.voiceNote(peer.getNickname() + " [Chung]", fileName, durationSeconds, false);
             } else {
-                channelKey = getChannelKeyForPeer(peer);
+                channelKey = "PEER_" + ChatStorageManager.sanitizeFileName(peer.getNickname());
                 msg = Message.voiceNote(peer.getNickname() + " [Chat riêng]", fileName, durationSeconds, false);
             }
 

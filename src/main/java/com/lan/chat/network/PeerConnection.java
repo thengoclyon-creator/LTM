@@ -1,5 +1,6 @@
 package com.lan.chat.network;
 
+import com.lan.chat.model.ChatRoom;
 import com.lan.chat.model.FileTransferTask;
 import com.lan.chat.model.PacketType;
 import com.lan.chat.model.Peer;
@@ -7,6 +8,8 @@ import com.lan.chat.model.Peer;
 import java.io.*;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -132,6 +135,13 @@ public class PeerConnection {
                     case PacketType.CALL_ACCEPT -> handleCallAccept();
                     case PacketType.CALL_REJECT -> handleCallReject();
                     case PacketType.CALL_HANGUP -> handleCallHangup();
+
+                    // Phase 5: Custom Group Rooms
+                    case PacketType.ROOM_INVITE -> handleRoomInvite();
+                    case PacketType.ROOM_RENAME -> handleRoomRename();
+                    case PacketType.ROOM_MEMBER_UPDATE -> handleRoomMemberUpdate();
+                    case PacketType.ROOM_CHAT_TEXT -> handleRoomChatText();
+                    case PacketType.ROOM_VOICE_NOTE -> handleRoomVoiceNote();
 
                     default -> listener.onStatusLog("Nhận packet type lạ: " + packetType, false);
                 }
@@ -357,6 +367,64 @@ public class PeerConnection {
     }
 
     // ==========================================
+    // Phase 5: Custom Group Rooms Handlers
+    // ==========================================
+
+    private void handleRoomInvite() throws IOException {
+        String roomId = dis.readUTF();
+        String roomName = dis.readUTF();
+        String creator = dis.readUTF();
+        String membersRaw = dis.readUTF();
+        List<String> members = new ArrayList<>();
+        if (!membersRaw.isEmpty()) {
+            for (String m : membersRaw.split(",")) {
+                if (!m.trim().isEmpty()) members.add(m.trim());
+            }
+        }
+        ChatRoom room = new ChatRoom(roomId, roomName, creator, members);
+        listener.onRoomInviteReceived(room, creator);
+    }
+
+    private void handleRoomRename() throws IOException {
+        String roomId = dis.readUTF();
+        String newRoomName = dis.readUTF();
+        String updatedBy = dis.readUTF();
+        listener.onRoomRenamed(roomId, newRoomName, updatedBy);
+    }
+
+    private void handleRoomMemberUpdate() throws IOException {
+        String roomId = dis.readUTF();
+        String membersRaw = dis.readUTF();
+        String updatedBy = dis.readUTF();
+        List<String> members = new ArrayList<>();
+        if (!membersRaw.isEmpty()) {
+            for (String m : membersRaw.split(",")) {
+                if (!m.trim().isEmpty()) members.add(m.trim());
+            }
+        }
+        listener.onRoomMembersUpdated(roomId, members, updatedBy);
+    }
+
+    private void handleRoomChatText() throws IOException {
+        String roomId = dis.readUTF();
+        boolean isEncrypted = dis.readBoolean();
+        String senderNickname = dis.readUTF();
+        String text = dis.readUTF();
+        listener.onRoomMessageReceived(roomId, senderNickname, text, isEncrypted);
+    }
+
+    private void handleRoomVoiceNote() throws IOException {
+        String roomId = dis.readUTF();
+        String senderNickname = dis.readUTF();
+        int duration = dis.readInt();
+        String fileName = dis.readUTF();
+        int len = dis.readInt();
+        byte[] audioData = new byte[len];
+        dis.readFully(audioData);
+        listener.onRoomVoiceNoteReceived(roomId, senderNickname, fileName, duration, audioData);
+    }
+
+    // ==========================================
     // Public Sending & Action API
     // ==========================================
 
@@ -399,6 +467,91 @@ public class PeerConnection {
             return true;
         } catch (IOException e) {
             listener.onStatusLog("Lỗi gửi tin nhắn thoại: " + e.getMessage(), true);
+            return false;
+        }
+    }
+
+    public boolean sendRoomInvite(ChatRoom room) {
+        if (!isConnected() || room == null) return false;
+        try {
+            synchronized (sendLock) {
+                dos.writeInt(PacketType.ROOM_INVITE);
+                dos.writeUTF(room.getId());
+                dos.writeUTF(room.getName());
+                dos.writeUTF(room.getCreator());
+                dos.writeUTF(String.join(",", room.getMembers()));
+                dos.flush();
+            }
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public boolean sendRoomRename(String roomId, String newName, String updatedBy) {
+        if (!isConnected()) return false;
+        try {
+            synchronized (sendLock) {
+                dos.writeInt(PacketType.ROOM_RENAME);
+                dos.writeUTF(roomId);
+                dos.writeUTF(newName);
+                dos.writeUTF(updatedBy);
+                dos.flush();
+            }
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public boolean sendRoomMemberUpdate(String roomId, List<String> members, String updatedBy) {
+        if (!isConnected()) return false;
+        try {
+            synchronized (sendLock) {
+                dos.writeInt(PacketType.ROOM_MEMBER_UPDATE);
+                dos.writeUTF(roomId);
+                dos.writeUTF(String.join(",", members));
+                dos.writeUTF(updatedBy);
+                dos.flush();
+            }
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public boolean sendRoomTextMessage(String roomId, String senderNickname, String text, boolean isEncrypted) {
+        if (!isConnected()) return false;
+        try {
+            synchronized (sendLock) {
+                dos.writeInt(PacketType.ROOM_CHAT_TEXT);
+                dos.writeUTF(roomId);
+                dos.writeBoolean(isEncrypted);
+                dos.writeUTF(senderNickname);
+                dos.writeUTF(text);
+                dos.flush();
+            }
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public boolean sendRoomVoiceNote(String roomId, String senderNickname, String fileName, int durationSeconds, byte[] audioData) {
+        if (!isConnected() || audioData == null) return false;
+        try {
+            synchronized (sendLock) {
+                dos.writeInt(PacketType.ROOM_VOICE_NOTE);
+                dos.writeUTF(roomId);
+                dos.writeUTF(senderNickname);
+                dos.writeInt(durationSeconds);
+                dos.writeUTF(fileName);
+                dos.writeInt(audioData.length);
+                dos.write(audioData);
+                dos.flush();
+            }
+            return true;
+        } catch (IOException e) {
             return false;
         }
     }

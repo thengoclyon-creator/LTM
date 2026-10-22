@@ -30,4 +30,11 @@ public class PacketType {
     public static final int CALL_ACCEPT = 301;      // calleeNickname, calleeUdpPort
     public static final int CALL_REJECT = 302;      // reason
     public static final int CALL_HANGUP = 303;      // notify end of call
+
+    // Phase 5: Custom Group Rooms (Tạo phòng riêng, Thêm thành viên, Đổi tên nhóm)
+    public static final int ROOM_INVITE = 400;         // roomId, roomName, creatorName, members
+    public static final int ROOM_RENAME = 401;         // roomId, newRoomName, updatedBy
+    public static final int ROOM_MEMBER_UPDATE = 402;  // roomId, members, updatedBy
+    public static final int ROOM_CHAT_TEXT = 403;      // roomId, isEncrypted, senderNickname, text
+    public static final int ROOM_VOICE_NOTE = 404;     // roomId, senderNickname, duration, fileName, audioBytes
 }
