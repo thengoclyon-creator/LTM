@@ -10,11 +10,14 @@ import com.lan.chat.voice.VoiceCallService;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -38,6 +41,7 @@ public class ConnectionManager {
 
     // Multi-peer connected map: Key = ip:port
     private final Map<String, PeerConnection> connectedPeers = new ConcurrentHashMap<>();
+    private final Set<String> connectingPeers = ConcurrentHashMap.newKeySet();
     private final List<Peer> onlinePeers = new CopyOnWriteArrayList<>();
     private final List<ConnectionListener> listeners = new CopyOnWriteArrayList<>();
 
@@ -132,8 +136,14 @@ public class ConnectionManager {
      * Connect manually or automatically to a peer IP:Port via TCP Socket.
      */
     public void connectToPeer(String ip, int port) {
+        connectToPeer(ip, port, false);
+    }
+
+    public void connectToPeer(String ip, int port, boolean isSilentAutoConnect) {
         if (port == this.listenPort && (ip.equals("127.0.0.1") || ip.equalsIgnoreCase("localhost") || NetworkUtil.getLocalIPv4Addresses().contains(ip))) {
-            broadcastLog("Không thể tự kết nối tới chính mình (" + ip + ":" + port + ")!", true);
+            if (!isSilentAutoConnect) {
+                broadcastLog("Không thể tự kết nối tới chính mình (" + ip + ":" + port + ")!", true);
+            }
             return;
         }
 
@@ -142,9 +152,14 @@ public class ConnectionManager {
             return; // Already connected
         }
 
+        if (!connectingPeers.add(key)) {
+            return; // Connection attempt already in flight
+        }
+
         new Thread(() -> {
             try {
-                Socket socket = new Socket(ip, port);
+                Socket socket = new Socket();
+                socket.connect(new InetSocketAddress(ip, port), 4000);
                 socket.setTcpNoDelay(true);
                 socket.setKeepAlive(true);
 
@@ -155,7 +170,11 @@ public class ConnectionManager {
                 broadcastLog("Kết nối thành công tới " + ip + ":" + port, false);
 
             } catch (IOException e) {
-                broadcastLog("Không thể kết nối tới " + ip + ":" + port + ": " + e.getMessage(), true);
+                if (!isSilentAutoConnect) {
+                    broadcastLog("Không thể kết nối tới " + ip + ":" + port + ": " + e.getMessage(), true);
+                }
+            } finally {
+                connectingPeers.remove(key);
             }
         }, "ConnectThread-" + key).start();
     }
@@ -166,12 +185,15 @@ public class ConnectionManager {
     private void handlePeerDiscovered(Peer peer) {
         peer.setAutoDiscovered(true);
         peer.setOnline(true);
-        registerOrUpdatePeer(peer);
+        boolean isNewlyOnline = registerOrUpdatePeer(peer);
 
-        for (ConnectionListener l : listeners) {
-            try {
-                l.onPeerDiscovered(peer);
-            } catch (Exception ignored) {}
+        // Only notify UI listeners if this peer is newly discovered or reconnected
+        if (isNewlyOnline) {
+            for (ConnectionListener l : listeners) {
+                try {
+                    l.onPeerDiscovered(peer);
+                } catch (Exception ignored) {}
+            }
         }
 
         // Auto-connect mesh logic (connect if not already connected and deterministic tie-breaker)
@@ -179,7 +201,7 @@ public class ConnectionManager {
         String peerKey = peer.getIp() + ":" + peer.getPort();
 
         if (!connectedPeers.containsKey(peerKey) && myKey.compareTo(peerKey) < 0) {
-            connectToPeer(peer.getIp(), peer.getPort());
+            connectToPeer(peer.getIp(), peer.getPort(), true);
         }
     }
 
@@ -213,16 +235,24 @@ public class ConnectionManager {
         holder[0] = new PeerConnection(socket, nickname, listenPort, new ConnectionListener() {
             @Override
             public void onConnected(Peer peer) {
+                PeerConnection old = connectedPeers.get(peer.getAddressKey());
+                if (old != null && old != holder[0] && old.isConnected()) {
+                    holder[0].close();
+                    return;
+                }
                 connectedPeers.put(peer.getAddressKey(), holder[0]);
+                peer.setConnected(true);
                 registerOrUpdatePeer(peer);
                 for (ConnectionListener l : listeners) l.onConnected(peer);
             }
 
             @Override
             public void onDisconnected(Peer peer, String reason) {
-                connectedPeers.remove(peer.getAddressKey());
-                peer.setConnected(false);
-                for (ConnectionListener l : listeners) l.onDisconnected(peer, reason);
+                if (connectedPeers.get(peer.getAddressKey()) == holder[0]) {
+                    connectedPeers.remove(peer.getAddressKey());
+                    peer.setConnected(false);
+                    for (ConnectionListener l : listeners) l.onDisconnected(peer, reason);
+                }
             }
 
             @Override
@@ -331,29 +361,39 @@ public class ConnectionManager {
         return holder[0];
     }
 
-    public synchronized void registerOrUpdatePeer(Peer peer) {
-        if (peer == null) return;
+    public synchronized boolean registerOrUpdatePeer(Peer peer) {
+        if (peer == null) return false;
         // Do not register self
         if (peer.getPort() == this.listenPort && (peer.getIp().equals("127.0.0.1") || peer.getIp().equalsIgnoreCase("localhost") || NetworkUtil.getLocalIPv4Addresses().contains(peer.getIp()))) {
-            return;
+            return false;
         }
 
         boolean found = false;
+        boolean statusChanged = false;
         for (Peer p : onlinePeers) {
             if (p.getIp().equals(peer.getIp()) && p.getPort() == peer.getPort()) {
-                p.setNickname(peer.getNickname());
-                p.setConnected(peer.isConnected());
+                if (!Objects.equals(p.getNickname(), peer.getNickname())) {
+                    p.setNickname(peer.getNickname());
+                    statusChanged = true;
+                }
+                if (p.isConnected() != peer.isConnected()) {
+                    p.setConnected(peer.isConnected());
+                    statusChanged = true;
+                }
+                boolean wasOffline = !p.isOnline();
                 p.setOnline(true);
                 p.setVoiceUdpPort(peer.getVoiceUdpPort());
                 p.setAutoDiscovered(peer.isAutoDiscovered());
                 p.setLastSeen(System.currentTimeMillis());
                 found = true;
-                break;
+                return wasOffline || statusChanged;
             }
         }
         if (!found) {
             onlinePeers.add(peer);
+            return true;
         }
+        return false;
     }
 
     /**

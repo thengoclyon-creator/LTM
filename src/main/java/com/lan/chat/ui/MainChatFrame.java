@@ -794,7 +794,6 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     public void onPeerDiscovered(Peer peer) {
         SwingUtilities.invokeLater(() -> {
             peersPanel.addOrUpdatePeer(peer);
-            chatHistoryPanel.appendSystem("🔍 Phát hiện thiết bị LAN: " + peer.getNickname() + " [" + peer.getIp() + ":" + peer.getPort() + "]", false);
         });
     }
 
