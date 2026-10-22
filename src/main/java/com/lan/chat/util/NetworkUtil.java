@@ -3,7 +3,6 @@ package com.lan.chat.util;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -12,6 +11,8 @@ public class NetworkUtil {
 
     /**
      * Get all active IPv4 LAN addresses of this machine.
+     * Filters out loopback and link-local (169.254.x.x) addresses,
+     * prioritizing real Wi-Fi / Ethernet LAN IP ranges (192.168.x.x, 10.x.x.x, 172.x.x.x).
      */
     public static List<String> getLocalIPv4Addresses() {
         List<String> ipList = new ArrayList<>();
@@ -24,8 +25,15 @@ public class NetworkUtil {
                 Enumeration<InetAddress> addresses = ni.getInetAddresses();
                 while (addresses.hasMoreElements()) {
                     InetAddress addr = addresses.nextElement();
-                    if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                        ipList.add(addr.getHostAddress());
+                    if (addr instanceof Inet4Address && !addr.isLoopbackAddress() && !addr.isLinkLocalAddress()) {
+                        String ip = addr.getHostAddress();
+                        if (!ip.startsWith("169.254.")) {
+                            if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                                ipList.add(0, ip); // Prioritize LAN addresses
+                            } else {
+                                ipList.add(ip);
+                            }
+                        }
                     }
                 }
             }

@@ -191,7 +191,7 @@ public class ConnectionManager {
      */
     private PeerConnection createPeerConnection(Socket socket) {
         final PeerConnection[] holder = new PeerConnection[1];
-        holder[0] = new PeerConnection(socket, nickname, new ConnectionListener() {
+        holder[0] = new PeerConnection(socket, nickname, listenPort, new ConnectionListener() {
             @Override
             public void onConnected(Peer peer) {
                 connectedPeers.put(peer.getAddressKey(), holder[0]);

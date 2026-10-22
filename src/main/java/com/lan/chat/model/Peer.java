@@ -4,7 +4,7 @@ import java.util.Objects;
 
 public class Peer {
     private final String ip;
-    private final int port;
+    private int port;
     private String nickname;
     private boolean isOnline;
     private boolean isConnected;
@@ -28,6 +28,7 @@ public class Peer {
 
     public String getIp() { return ip; }
     public int getPort() { return port; }
+    public void setPort(int port) { this.port = port; }
     public String getNickname() { return nickname; }
     public void setNickname(String nickname) { this.nickname = nickname; }
     public boolean isOnline() { return isOnline; }

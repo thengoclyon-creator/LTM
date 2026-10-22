@@ -21,6 +21,7 @@ public class PeerConnection {
     private final Socket socket;
     private final Peer peer;
     private final String myNickname;
+    private final int myListenPort;
     private final ConnectionListener listener;
 
     private DataInputStream dis;
@@ -34,14 +35,19 @@ public class PeerConnection {
     private final Map<String, FileTransferTask> activeTasks = new ConcurrentHashMap<>();
     private File downloadFolder = new File(System.getProperty("user.home"), "Downloads");
 
-    public PeerConnection(Socket socket, String myNickname, ConnectionListener listener) {
+    public PeerConnection(Socket socket, String myNickname, int myListenPort, ConnectionListener listener) {
         this.socket = socket;
         this.myNickname = myNickname;
+        this.myListenPort = myListenPort;
         this.listener = listener;
 
         String remoteIp = socket.getInetAddress().getHostAddress();
         int remotePort = socket.getPort();
         this.peer = new Peer(remoteIp, remotePort, remoteIp);
+    }
+
+    public PeerConnection(Socket socket, String myNickname, ConnectionListener listener) {
+        this(socket, myNickname, 5000, listener);
     }
 
     public void setDownloadFolder(File folder) {
@@ -84,6 +90,7 @@ public class PeerConnection {
             synchronized (sendLock) {
                 dos.writeInt(PacketType.HANDSHAKE);
                 dos.writeUTF(myNickname);
+                dos.writeInt(myListenPort);
                 dos.flush();
             }
         } catch (IOException e) {
@@ -96,7 +103,6 @@ public class PeerConnection {
      */
     private void readLoop() {
         peer.setConnected(true);
-        listener.onConnected(peer);
 
         try {
             while (running && !socket.isClosed()) {
@@ -149,20 +155,27 @@ public class PeerConnection {
 
     private void handleHandshake() throws IOException {
         String remoteName = dis.readUTF();
+        int remoteListenPort = dis.readInt();
         peer.setNickname(remoteName);
-        listener.onStatusLog("Đã kết nối với " + remoteName + " [" + peer.getIp() + "]", false);
+        peer.setPort(remoteListenPort);
+        listener.onConnected(peer);
+        listener.onStatusLog("Đã kết nối với " + remoteName + " [" + peer.getIp() + ":" + remoteListenPort + "]", false);
 
         // Reply ACK
         synchronized (sendLock) {
             dos.writeInt(PacketType.HANDSHAKE_ACK);
             dos.writeUTF(myNickname);
+            dos.writeInt(myListenPort);
             dos.flush();
         }
     }
 
     private void handleHandshakeAck() throws IOException {
         String remoteName = dis.readUTF();
+        int remoteListenPort = dis.readInt();
         peer.setNickname(remoteName);
+        peer.setPort(remoteListenPort);
+        listener.onConnected(peer);
         listener.onStatusLog("Bắt tay thành công với " + remoteName, false);
     }
 
