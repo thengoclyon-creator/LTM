@@ -20,25 +20,25 @@ public class FileTransferBar extends JPanel {
     private Consumer<FileTransferTask> onCancelAction;
 
     public FileTransferBar() {
-        setLayout(new BorderLayout(10, 5));
+        setLayout(new BorderLayout(10, 6));
         setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(60, 63, 65)),
-                BorderFactory.createEmptyBorder(6, 12, 6, 12)
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(8, 16, 8, 16)
         ));
-        setBackground(new Color(38, 40, 44));
+        setBackground(Color.WHITE);
         setVisible(false);
 
         // Top line: File name and stats
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.setOpaque(false);
 
-        lblFileName = new JLabel("📁 Đang truyền: file.dat");
+        lblFileName = new JLabel("Truyền file");
         lblFileName.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        lblFileName.setForeground(new Color(220, 220, 220));
+        lblFileName.setForeground(new Color(15, 23, 42));
 
         lblStats = new JLabel("0% (0 KB / 0 KB) - 0 KB/s");
         lblStats.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        lblStats.setForeground(new Color(160, 160, 160));
+        lblStats.setForeground(new Color(100, 116, 139));
 
         topPanel.add(lblFileName, BorderLayout.WEST);
         topPanel.add(lblStats, BorderLayout.EAST);
@@ -50,26 +50,27 @@ public class FileTransferBar extends JPanel {
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
         progressBar.setValue(0);
-        progressBar.setForeground(new Color(88, 101, 242));
-        progressBar.setBackground(new Color(50, 53, 58));
+        progressBar.setForeground(new Color(79, 70, 229));
+        progressBar.setBackground(new Color(241, 245, 249));
 
-        JPanel buttonBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        JPanel buttonBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         buttonBox.setOpaque(false);
 
-        btnPauseResume = new JButton("⏸️");
-        btnPauseResume.setToolTipText("Tạm dừng / Tiếp tục");
+        btnPauseResume = new JButton("Tạm dừng");
+        btnPauseResume.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         btnPauseResume.setFocusPainted(false);
-        btnPauseResume.setMargin(new Insets(2, 6, 2, 6));
+        btnPauseResume.setMargin(new Insets(2, 8, 2, 8));
         btnPauseResume.addActionListener(e -> {
             if (currentTask != null && onPauseResumeAction != null) {
                 onPauseResumeAction.accept(currentTask);
             }
         });
 
-        btnCancel = new JButton("✕");
-        btnCancel.setToolTipText("Hủy truyền file");
+        btnCancel = new JButton("Hủy");
+        btnCancel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnCancel.setForeground(new Color(220, 38, 38));
         btnCancel.setFocusPainted(false);
-        btnCancel.setMargin(new Insets(2, 6, 2, 6));
+        btnCancel.setMargin(new Insets(2, 8, 2, 8));
         btnCancel.addActionListener(e -> {
             if (currentTask != null && onCancelAction != null) {
                 onCancelAction.accept(currentTask);
@@ -102,8 +103,8 @@ public class FileTransferBar extends JPanel {
         }
 
         setVisible(true);
-        String prefix = task.isUpload() ? "⬆️ Gửi: " : "⬇️ Nhận: ";
-        lblFileName.setText(prefix + task.getFileName() + " [Chunking 8KB & Hỗ trợ Resume]");
+        String prefix = task.isUpload() ? "[GỬI] " : "[NHẬN] ";
+        lblFileName.setText(prefix + task.getFileName() + " (Chunking 8KB & Resume)");
 
         int percent = task.getProgressPercent();
         progressBar.setValue(percent);
@@ -117,12 +118,10 @@ public class FileTransferBar extends JPanel {
         String etaStr = (eta > 0) ? (" - Còn " + formatEta(eta)) : "";
 
         if (task.getStatus() == FileTransferTask.Status.PAUSED) {
-            btnPauseResume.setText("▶️");
-            btnPauseResume.setToolTipText("Tiếp tục (Resume)");
-            lblStats.setText(String.format("⏸️ Tạm dừng: %s / %s (%d%%)", transferred, total, percent));
+            btnPauseResume.setText("Tiếp tục");
+            lblStats.setText(String.format("Tạm dừng: %s / %s (%d%%)", transferred, total, percent));
         } else {
-            btnPauseResume.setText("⏸️");
-            btnPauseResume.setToolTipText("Tạm dừng");
+            btnPauseResume.setText("Tạm dừng");
             lblStats.setText(String.format("%s / %s (%s%s)", transferred, total, speed, etaStr));
         }
     }

@@ -6,13 +6,12 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.util.List;
 import java.util.function.Consumer;
 
 public class OnlinePeersPanel extends JPanel {
 
     // Sentinel peer representing Group / All LAN chat
-    public static final Peer GROUP_CHAT_PEER = new Peer("0.0.0.0", 0, "📢 PHÒNG CHAT CHUNG (Tất cả)");
+    public static final Peer GROUP_CHAT_PEER = new Peer("0.0.0.0", 0, "PHÒNG CHAT CHUNG (Tất cả)");
 
     private final DefaultListModel<Peer> listModel = new DefaultListModel<>();
     private final JList<Peer> peerJList = new JList<>(listModel);
@@ -23,20 +22,24 @@ public class OnlinePeersPanel extends JPanel {
 
     public OnlinePeersPanel() {
         setLayout(new BorderLayout());
-        setBackground(new Color(30, 31, 35));
+        setBackground(new Color(248, 250, 252));
         setPreferredSize(new Dimension(260, 0));
+        setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, new Color(226, 232, 240)));
 
         // Header
         JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBackground(new Color(25, 26, 30));
-        headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
+        headerPanel.setBackground(Color.WHITE);
+        headerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(12, 14, 12, 14)
+        ));
 
-        JLabel titleLabel = new JLabel("🌐 MẠNG NỘI BỘ LAN");
+        JLabel titleLabel = new JLabel("MẠNG NỘI BỘ LAN");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        titleLabel.setForeground(new Color(180, 185, 195));
+        titleLabel.setForeground(new Color(15, 23, 42));
 
         lblPeerCount.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        lblPeerCount.setForeground(new Color(120, 125, 135));
+        lblPeerCount.setForeground(new Color(100, 116, 139));
 
         headerPanel.add(titleLabel, BorderLayout.WEST);
         headerPanel.add(lblPeerCount, BorderLayout.EAST);
@@ -46,8 +49,7 @@ public class OnlinePeersPanel extends JPanel {
         listModel.addElement(GROUP_CHAT_PEER);
 
         // List Configuration
-        peerJList.setBackground(new Color(30, 31, 35));
-        peerJList.setForeground(Color.WHITE);
+        peerJList.setBackground(new Color(248, 250, 252));
         peerJList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         peerJList.setCellRenderer(new PeerCellRenderer());
         peerJList.setSelectedIndex(0);
@@ -75,21 +77,24 @@ public class OnlinePeersPanel extends JPanel {
 
         JScrollPane scrollPane = new JScrollPane(peerJList);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
-        scrollPane.getViewport().setBackground(new Color(30, 31, 35));
+        scrollPane.getViewport().setBackground(new Color(248, 250, 252));
         add(scrollPane, BorderLayout.CENTER);
 
-        // Bottom hint
-        JPanel bottomHint = new JPanel(new GridLayout(2, 1, 0, 2));
-        bottomHint.setBackground(new Color(25, 26, 30));
-        bottomHint.setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
+        // Bottom hints
+        JPanel bottomHint = new JPanel(new GridLayout(2, 1, 0, 3));
+        bottomHint.setBackground(Color.WHITE);
+        bottomHint.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(8, 10, 10, 10)
+        ));
 
-        JLabel hint1 = new JLabel("📡 Tự động dò tìm qua UDP Broadcast", SwingConstants.CENTER);
-        hint1.setFont(new Font("Segoe UI", Font.ITALIC, 10));
-        hint1.setForeground(new Color(87, 242, 135));
+        JLabel hint1 = new JLabel("● Tự động dò tìm qua UDP Broadcast", SwingConstants.CENTER);
+        hint1.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        hint1.setForeground(new Color(5, 150, 105));
 
-        JLabel hint2 = new JLabel("💡 Chọn kênh chung hoặc người cụ thể", SwingConstants.CENTER);
-        hint2.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-        hint2.setForeground(new Color(140, 145, 155));
+        JLabel hint2 = new JLabel("Nhấp đúp thiết bị để kết nối", SwingConstants.CENTER);
+        hint2.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        hint2.setForeground(new Color(100, 116, 139));
 
         bottomHint.add(hint1);
         bottomHint.add(hint2);
@@ -147,32 +152,34 @@ public class OnlinePeersPanel extends JPanel {
     }
 
     private static class PeerCellRenderer extends JPanel implements ListCellRenderer<Peer> {
-        private final JLabel lblAvatar = new JLabel();
+        private final JLabel lblBadge = new JLabel();
         private final JLabel lblName = new JLabel();
         private final JLabel lblIp = new JLabel();
         private final JLabel lblStatus = new JLabel();
 
         public PeerCellRenderer() {
-            setLayout(new BorderLayout(8, 2));
-            setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
+            setLayout(new BorderLayout(10, 2));
+            setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createEmptyBorder(4, 8, 4, 8),
+                    BorderFactory.createEmptyBorder(6, 8, 6, 8)
+            ));
 
-            lblAvatar.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 16));
+            lblBadge.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            lblBadge.setHorizontalAlignment(SwingConstants.CENTER);
+            lblBadge.setPreferredSize(new Dimension(36, 32));
+            lblBadge.setOpaque(true);
 
             JPanel textPanel = new JPanel(new GridLayout(2, 1, 0, 2));
             textPanel.setOpaque(false);
 
             lblName.setFont(new Font("Segoe UI", Font.BOLD, 12));
-            lblName.setForeground(new Color(230, 230, 230));
-
-            lblIp.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-            lblIp.setForeground(new Color(160, 160, 160));
+            lblIp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            lblStatus.setFont(new Font("Segoe UI", Font.BOLD, 11));
 
             textPanel.add(lblName);
             textPanel.add(lblIp);
 
-            lblStatus.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-
-            add(lblAvatar, BorderLayout.WEST);
+            add(lblBadge, BorderLayout.WEST);
             add(textPanel, BorderLayout.CENTER);
             add(lblStatus, BorderLayout.EAST);
         }
@@ -181,34 +188,51 @@ public class OnlinePeersPanel extends JPanel {
         public Component getListCellRendererComponent(JList<? extends Peer> list, Peer peer, int index,
                                                       boolean isSelected, boolean cellHasFocus) {
             if (peer.equals(GROUP_CHAT_PEER)) {
-                lblAvatar.setText("📢");
+                lblBadge.setText("ALL");
+                lblBadge.setBackground(new Color(224, 231, 255));
+                lblBadge.setForeground(new Color(67, 56, 202));
+
                 lblName.setText("Phòng Chat Chung");
-                lblName.setForeground(new Color(88, 101, 242));
-                lblIp.setText("Gửi tin tới mọi máy trong LAN");
-                lblStatus.setText("Tất cả");
-                lblStatus.setForeground(new Color(235, 69, 158));
+                lblName.setForeground(new Color(67, 56, 202));
+
+                lblIp.setText("Gửi tin tới mọi máy LAN");
+                lblIp.setForeground(new Color(100, 116, 139));
+
+                lblStatus.setText("● Tất cả");
+                lblStatus.setForeground(new Color(79, 70, 229));
+
+                if (isSelected) {
+                    setBackground(new Color(224, 231, 255));
+                } else {
+                    setBackground(new Color(238, 242, 255));
+                }
             } else {
-                lblAvatar.setText("💻");
+                lblBadge.setText("LAN");
+                lblBadge.setBackground(new Color(241, 245, 249));
+                lblBadge.setForeground(new Color(71, 85, 105));
+
                 lblName.setText(peer.getNickname());
-                lblName.setForeground(new Color(230, 230, 230));
+                lblName.setForeground(new Color(15, 23, 42));
+
                 lblIp.setText(peer.getIp() + ":" + peer.getPort());
+                lblIp.setForeground(new Color(100, 116, 139));
 
                 if (peer.isConnected()) {
-                    lblStatus.setText("🔵 Đã nối");
-                    lblStatus.setForeground(new Color(88, 101, 242));
+                    lblStatus.setText("● Đã nối");
+                    lblStatus.setForeground(new Color(37, 99, 235));
                 } else if (peer.isOnline()) {
-                    lblStatus.setText("🟢 Online");
-                    lblStatus.setForeground(new Color(59, 165, 93));
+                    lblStatus.setText("● Online");
+                    lblStatus.setForeground(new Color(16, 185, 129));
                 } else {
-                    lblStatus.setText("⚪ Offline");
-                    lblStatus.setForeground(new Color(120, 120, 120));
+                    lblStatus.setText("○ Offline");
+                    lblStatus.setForeground(new Color(148, 163, 184));
                 }
-            }
 
-            if (isSelected) {
-                setBackground(new Color(53, 56, 62));
-            } else {
-                setBackground(new Color(30, 31, 35));
+                if (isSelected) {
+                    setBackground(new Color(224, 231, 255));
+                } else {
+                    setBackground(Color.WHITE);
+                }
             }
             return this;
         }

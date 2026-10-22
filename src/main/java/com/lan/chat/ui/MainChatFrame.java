@@ -67,79 +67,89 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     private void initWindow() {
         setTitle("LAN Chat Pro - Chat Nhóm & Voice UDP Đa Thiết Bị");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1050, 720);
+        setSize(1060, 720);
         setMinimumSize(new Dimension(880, 580));
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
-        getContentPane().setBackground(new Color(49, 51, 56));
+        getContentPane().setBackground(new Color(248, 250, 252));
     }
 
     private void initHeaderPanel() {
-        JPanel header = new JPanel(new BorderLayout(10, 0));
-        header.setBackground(new Color(30, 31, 35));
+        JPanel header = new JPanel(new BorderLayout(12, 0));
+        header.setBackground(Color.WHITE);
         header.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(40, 42, 46)),
-                BorderFactory.createEmptyBorder(10, 15, 10, 15)
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(10, 16, 10, 16)
         ));
 
-        // Left of Header: Local Machine Info & Server Control
-        JPanel localInfoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        // Left of Header: App Brand, Local IP & Server Listening
+        JPanel localInfoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         localInfoPanel.setOpaque(false);
 
-        JLabel logo = new JLabel("⚡ LAN CHAT PRO");
+        JLabel logo = new JLabel("LAN CHAT PRO");
         logo.setFont(new Font("Segoe UI", Font.BOLD, 15));
-        logo.setForeground(new Color(88, 101, 242));
+        logo.setForeground(new Color(67, 56, 202));
 
         String myIp = NetworkUtil.getPrimaryLocalIP();
         lblMyIp = new JLabel("IP: " + myIp);
         lblMyIp.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lblMyIp.setForeground(new Color(200, 200, 200));
+        lblMyIp.setForeground(new Color(71, 85, 105));
 
         JLabel lblPort = new JLabel("Port:");
-        lblPort.setForeground(new Color(170, 170, 170));
+        lblPort.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lblPort.setForeground(new Color(100, 116, 139));
+
         txtLocalPort = new JTextField(String.valueOf(connectionManager.getListenPort()), 4);
         txtLocalPort.setHorizontalAlignment(JTextField.CENTER);
+        txtLocalPort.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
         btnToggleServer = new JButton("Khởi động");
+        btnToggleServer.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         btnToggleServer.setFocusPainted(false);
         btnToggleServer.addActionListener(e -> toggleServer());
 
         localInfoPanel.add(logo);
-        localInfoPanel.add(Box.createHorizontalStrut(8));
+        localInfoPanel.add(Box.createHorizontalStrut(6));
         localInfoPanel.add(lblMyIp);
         localInfoPanel.add(lblPort);
         localInfoPanel.add(txtLocalPort);
         localInfoPanel.add(btnToggleServer);
 
-        // Right of Header: Manual TCP Connection, E2EE, and Discovery Badge
+        // Right of Header: Manual TCP Connection & E2EE Checkbox
         JPanel remoteConnectPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         remoteConnectPanel.setOpaque(false);
 
         JLabel lblRemote = new JLabel("Kết nối IP:");
-        lblRemote.setForeground(new Color(170, 170, 170));
+        lblRemote.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lblRemote.setForeground(new Color(100, 116, 139));
 
         txtTargetIp = new JTextField(myIp, 10);
+        txtTargetIp.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+
         txtTargetPort = new JTextField("5000", 4);
         txtTargetPort.setHorizontalAlignment(JTextField.CENTER);
+        txtTargetPort.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
-        btnConnect = new JButton("🔗 Nối TCP");
-        btnConnect.setBackground(new Color(88, 101, 242));
+        btnConnect = new JButton("Nối TCP");
+        btnConnect.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnConnect.setBackground(new Color(79, 70, 229));
         btnConnect.setForeground(Color.WHITE);
         btnConnect.setFocusPainted(false);
         btnConnect.addActionListener(e -> connectToTarget());
 
-        chkE2ee = new JCheckBox("🔒 AES E2EE", true);
+        chkE2ee = new JCheckBox("Mã hóa AES (E2EE)", true);
         chkE2ee.setOpaque(false);
-        chkE2ee.setForeground(new Color(87, 242, 135));
-        chkE2ee.setToolTipText("Mã hóa tin nhắn End-to-End bằng AES-GCM");
+        chkE2ee.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        chkE2ee.setForeground(new Color(5, 150, 105));
+        chkE2ee.setToolTipText("Mã hóa tin nhắn End-to-End bằng AES-GCM (Chống soi gói tin trên mạng LAN)");
         chkE2ee.addActionListener(e -> connectionManager.setE2eeEnabled(chkE2ee.isSelected()));
 
         remoteConnectPanel.add(lblRemote);
         remoteConnectPanel.add(txtTargetIp);
         remoteConnectPanel.add(txtTargetPort);
         remoteConnectPanel.add(btnConnect);
-        remoteConnectPanel.add(Box.createHorizontalStrut(6));
+        remoteConnectPanel.add(Box.createHorizontalStrut(8));
         remoteConnectPanel.add(chkE2ee);
 
         header.add(localInfoPanel, BorderLayout.WEST);
@@ -169,15 +179,15 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
         // Subheader: Active target and Voice Call toolbar
         JPanel subHeaderPanel = new JPanel(new BorderLayout(8, 0));
-        subHeaderPanel.setBackground(new Color(38, 40, 44));
+        subHeaderPanel.setBackground(Color.WHITE);
         subHeaderPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(50, 53, 58)),
-                BorderFactory.createEmptyBorder(6, 12, 6, 12)
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(8, 16, 8, 16)
         ));
 
-        lblActivePeerStatus = new JLabel("📢 PHÒNG CHAT CHUNG - Gửi tin tới tất cả thiết bị đã kết nối");
+        lblActivePeerStatus = new JLabel("PHÒNG CHAT CHUNG - Gửi tin tới tất cả thiết bị LAN");
         lblActivePeerStatus.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        lblActivePeerStatus.setForeground(new Color(230, 230, 230));
+        lblActivePeerStatus.setForeground(new Color(15, 23, 42));
 
         // Voice call action buttons
         JPanel voiceActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -185,24 +195,27 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
         lblCallBanner = new JLabel("");
         lblCallBanner.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        lblCallBanner.setForeground(new Color(87, 242, 135));
+        lblCallBanner.setForeground(new Color(5, 150, 105));
         lblCallBanner.setVisible(false);
 
-        btnCall = new JButton("📞 Gọi thoại");
+        btnCall = new JButton("Gọi thoại");
         btnCall.setToolTipText("Gọi thoại trực tiếp qua UDP tới đối phương");
-        btnCall.setBackground(new Color(59, 165, 93));
+        btnCall.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnCall.setBackground(new Color(16, 185, 129));
         btnCall.setForeground(Color.WHITE);
         btnCall.setFocusPainted(false);
         btnCall.addActionListener(e -> initiateVoiceCall());
 
-        btnHangup = new JButton("🔴 Ngắt máy");
-        btnHangup.setBackground(new Color(237, 66, 69));
+        btnHangup = new JButton("Ngắt cuộc gọi");
+        btnHangup.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnHangup.setBackground(new Color(220, 38, 38));
         btnHangup.setForeground(Color.WHITE);
         btnHangup.setFocusPainted(false);
         btnHangup.setVisible(false);
         btnHangup.addActionListener(e -> connectionManager.hangupCall());
 
-        btnMute = new JButton("🎙️ Mic: BẬT");
+        btnMute = new JButton("Mic: BẬT");
+        btnMute.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         btnMute.setFocusPainted(false);
         btnMute.setVisible(false);
         btnMute.addActionListener(e -> toggleMute());
@@ -252,28 +265,31 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
     private void initInputPanel() {
         JPanel bottomContainer = new JPanel(new BorderLayout());
-        bottomContainer.setBackground(new Color(38, 40, 44));
+        bottomContainer.setBackground(Color.WHITE);
         bottomContainer.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(50, 53, 58)),
-                BorderFactory.createEmptyBorder(8, 12, 8, 12)
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(8, 14, 10, 14)
         ));
 
-        // Emoji Toolbar
+        // Emoji Toolbar (Configured with Segoe UI Emoji font so they render cleanly!)
         JPanel emojiToolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         emojiToolbar.setOpaque(false);
-        JLabel lblEmoji = new JLabel("Biểu tượng: ");
+
+        JLabel lblEmoji = new JLabel("Biểu tượng:");
         lblEmoji.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        lblEmoji.setForeground(new Color(150, 150, 150));
+        lblEmoji.setForeground(new Color(100, 116, 139));
         emojiToolbar.add(lblEmoji);
 
-        String[] emojis = {"😊", "👍", "❤️", "🔥", "🎉", "🚀", "👏", "😂", "💻", "✅", "⚠️", "📁"};
+        Font emojiFont = new Font("Segoe UI Emoji", Font.PLAIN, 15);
+        String[] emojis = {"😊", "👍", "❤️", "🔥", "🎉", "🚀", "👏", "😂", "⭐", "💻"};
         for (String emo : emojis) {
             JButton btnEmo = new JButton(emo);
-            btnEmo.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 13));
+            btnEmo.setFont(emojiFont);
             btnEmo.setMargin(new Insets(1, 4, 1, 4));
             btnEmo.setFocusPainted(false);
             btnEmo.setContentAreaFilled(false);
             btnEmo.setBorderPainted(false);
+            btnEmo.setCursor(new Cursor(Cursor.HAND_CURSOR));
             btnEmo.addActionListener(e -> {
                 txtMessageInput.setText(txtMessageInput.getText() + emo);
                 txtMessageInput.requestFocusInWindow();
@@ -286,20 +302,25 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         inputRow.setOpaque(false);
         inputRow.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
 
-        btnSelectFile = new JButton("📁 Chọn File");
+        btnSelectFile = new JButton("Chọn File");
         btnSelectFile.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnSelectFile.setFocusPainted(false);
-        btnSelectFile.setBackground(new Color(60, 63, 69));
-        btnSelectFile.setForeground(Color.WHITE);
+        btnSelectFile.setBackground(Color.WHITE);
+        btnSelectFile.setForeground(new Color(51, 65, 85));
+        btnSelectFile.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(203, 213, 225), 1, true),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)
+        ));
         btnSelectFile.addActionListener(e -> chooseAndSendFile());
 
         txtMessageInput = new JTextField();
-        txtMessageInput.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        txtMessageInput.setBackground(new Color(56, 58, 64));
-        txtMessageInput.setForeground(Color.WHITE);
-        txtMessageInput.setCaretColor(Color.WHITE);
+        // Crucial: Use Segoe UI Emoji font so emojis don't display as tofu boxes!
+        txtMessageInput.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 14));
+        txtMessageInput.setBackground(Color.WHITE);
+        txtMessageInput.setForeground(new Color(15, 23, 42));
+        txtMessageInput.setCaretColor(new Color(15, 23, 42));
         txtMessageInput.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(70, 72, 78), 1, true),
+                BorderFactory.createLineBorder(new Color(203, 213, 225), 1, true),
                 BorderFactory.createEmptyBorder(6, 10, 6, 10)
         ));
         txtMessageInput.addKeyListener(new KeyAdapter() {
@@ -311,11 +332,12 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             }
         });
 
-        btnSend = new JButton("Gửi ➤");
+        btnSend = new JButton("Gửi");
         btnSend.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        btnSend.setBackground(new Color(88, 101, 242));
+        btnSend.setBackground(new Color(79, 70, 229));
         btnSend.setForeground(Color.WHITE);
         btnSend.setFocusPainted(false);
+        btnSend.setBorder(BorderFactory.createEmptyBorder(6, 16, 6, 16));
         btnSend.addActionListener(e -> sendMessage());
 
         inputRow.add(btnSelectFile, BorderLayout.WEST);
@@ -348,21 +370,21 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             case CALLING -> {
                 btnCall.setEnabled(false);
                 btnHangup.setVisible(true);
-                lblCallBanner.setText("📞 Đang đổ chuông...");
-                lblCallBanner.setForeground(new Color(254, 231, 92));
+                lblCallBanner.setText("Đang đổ chuông...");
+                lblCallBanner.setForeground(new Color(217, 119, 6));
                 lblCallBanner.setVisible(true);
             }
             case RINGING -> {
-                lblCallBanner.setText("🔔 Cuộc gọi đến...");
-                lblCallBanner.setForeground(new Color(254, 231, 92));
+                lblCallBanner.setText("Cuộc gọi đến...");
+                lblCallBanner.setForeground(new Color(217, 119, 6));
                 lblCallBanner.setVisible(true);
             }
             case CONNECTED -> {
                 btnCall.setVisible(false);
                 btnHangup.setVisible(true);
                 btnMute.setVisible(true);
-                lblCallBanner.setText("🟢 Đang gọi thoại (UDP)");
-                lblCallBanner.setForeground(new Color(87, 242, 135));
+                lblCallBanner.setText("Đang gọi thoại (UDP)");
+                lblCallBanner.setForeground(new Color(5, 150, 105));
                 lblCallBanner.setVisible(true);
             }
         }
@@ -371,17 +393,17 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     private void toggleMute() {
         boolean newMuted = !connectionManager.getVoiceCallService().isMuted();
         connectionManager.getVoiceCallService().setMuted(newMuted);
-        btnMute.setText(newMuted ? "🔇 Mic: TẮT" : "🎙️ Mic: BẬT");
-        btnMute.setBackground(newMuted ? new Color(237, 66, 69) : null);
+        btnMute.setText(newMuted ? "Mic: TẮT" : "Mic: BẬT");
+        btnMute.setForeground(newMuted ? new Color(220, 38, 38) : null);
     }
 
     private void updateChatTargetBanner() {
         if (activeTargetPeer == null) {
-            lblActivePeerStatus.setText("📢 PHÒNG CHAT CHUNG - Gửi tin tới tất cả thiết bị trong mạng LAN");
-            lblActivePeerStatus.setForeground(new Color(230, 230, 230));
+            lblActivePeerStatus.setText("PHÒNG CHAT CHUNG - Gửi tin tới tất cả thiết bị LAN");
+            lblActivePeerStatus.setForeground(new Color(15, 23, 42));
         } else {
-            lblActivePeerStatus.setText("💬 Chat Riêng với: " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getIp() + ")");
-            lblActivePeerStatus.setForeground(new Color(88, 101, 242));
+            lblActivePeerStatus.setText("Chat Riêng với: " + activeTargetPeer.getNickname() + " (" + activeTargetPeer.getIp() + ")");
+            lblActivePeerStatus.setForeground(new Color(67, 56, 202));
         }
     }
 
@@ -394,6 +416,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             connectionManager.stopServer();
             btnToggleServer.setText("Khởi động");
             btnToggleServer.setBackground(null);
+            btnToggleServer.setForeground(null);
             txtLocalPort.setEnabled(true);
             chatHistoryPanel.appendSystem("Đã dừng Server.", false);
         } else {
@@ -407,7 +430,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
             boolean ok = connectionManager.startServer(port);
             if (ok) {
                 btnToggleServer.setText("Dừng Server");
-                btnToggleServer.setBackground(new Color(59, 165, 93));
+                btnToggleServer.setBackground(new Color(16, 185, 129));
                 btnToggleServer.setForeground(Color.WHITE);
                 txtLocalPort.setEnabled(false);
                 chatHistoryPanel.appendSystem("ServerSocket & Auto-Discovery UDP đã bật tại cổng " + port, false);
@@ -481,7 +504,6 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     private void initiateVoiceCall() {
         Peer target = activeTargetPeer;
         if (target == null) {
-            // Pick first connected peer if in Group mode
             if (!connectionManager.getConnectedPeers().isEmpty()) {
                 target = connectionManager.getConnectedPeers().iterator().next().getPeer();
             }
@@ -503,7 +525,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         AudioNotifier.playMessageTing();
         int choice = JOptionPane.showConfirmDialog(
                 this,
-                "📞 " + peer.getNickname() + " (" + peer.getIp() + ") đang gọi thoại trực tiếp qua UDP!\nBạn có muốn nghe máy không?",
+                peer.getNickname() + " (" + peer.getIp() + ") đang gọi thoại trực tiếp qua UDP!\nBạn có muốn nghe máy không?",
                 "Cuộc gọi thoại mạng LAN",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.QUESTION_MESSAGE

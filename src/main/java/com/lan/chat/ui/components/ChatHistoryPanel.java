@@ -6,7 +6,6 @@ import javax.swing.*;
 import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
 import java.awt.*;
-import java.io.StringWriter;
 
 public class ChatHistoryPanel extends JPanel {
 
@@ -17,92 +16,89 @@ public class ChatHistoryPanel extends JPanel {
 
     public ChatHistoryPanel() {
         setLayout(new BorderLayout());
-        setBackground(new Color(49, 51, 56));
+        setBackground(new Color(248, 250, 252));
 
         textPane = new JTextPane();
         textPane.setEditable(false);
         textPane.setContentType("text/html; charset=UTF-8");
+        textPane.setBackground(new Color(248, 250, 252));
 
         editorKit = new HTMLEditorKit();
         textPane.setEditorKit(editorKit);
         document = (HTMLDocument) textPane.getDocument();
 
-        // Base styles for chat history
+        // Modern, Bright, High-Contrast Light Theme Styles
         String css = """
             body {
-                font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
-                background-color: #313338;
-                color: #DBDEE1;
-                margin: 8px;
+                font-family: 'Segoe UI', 'Segoe UI Emoji', Tahoma, Arial, sans-serif;
+                background-color: #F8FAFC;
+                color: #1E293B;
+                margin: 12px;
                 padding: 0;
             }
             .msg-row-me {
                 text-align: right;
-                margin-bottom: 8px;
+                margin-bottom: 10px;
             }
             .msg-bubble-me {
                 display: inline-block;
-                background-color: #5865F2;
+                background-color: #4F46E5;
                 color: #FFFFFF;
-                padding: 8px 12px;
+                padding: 9px 14px;
                 border-radius: 12px;
                 max-width: 75%;
                 text-align: left;
                 word-wrap: break-word;
+                font-size: 13px;
             }
             .msg-row-peer {
                 text-align: left;
-                margin-bottom: 8px;
+                margin-bottom: 10px;
             }
             .msg-bubble-peer {
                 display: inline-block;
-                background-color: #2B2D31;
-                color: #DBDEE1;
-                padding: 8px 12px;
+                background-color: #FFFFFF;
+                color: #1E293B;
+                padding: 9px 14px;
                 border-radius: 12px;
-                border: 1px solid #3F4147;
+                border: 1px solid #E2E8F0;
                 max-width: 75%;
                 text-align: left;
                 word-wrap: break-word;
+                font-size: 13px;
             }
             .msg-meta {
-                font-size: 9px;
-                color: #949BA4;
-                margin-top: 3px;
+                font-size: 10px;
+                color: #64748B;
+                margin-top: 4px;
             }
             .msg-meta-me {
-                color: #E0E3FF;
+                color: #E0E7FF;
             }
             .sender-name {
                 font-weight: bold;
                 font-size: 11px;
-                color: #5865F2;
-                margin-bottom: 2px;
+                color: #4F46E5;
+                margin-bottom: 3px;
             }
             .system-msg {
                 text-align: center;
-                margin: 6px 0;
+                margin: 8px 0;
             }
             .system-bubble {
                 display: inline-block;
-                background-color: #232428;
-                color: #949BA4;
-                padding: 4px 10px;
+                background-color: #F1F5F9;
+                color: #475569;
+                padding: 4px 12px;
                 border-radius: 10px;
                 font-size: 11px;
-                border: 1px solid #35373C;
+                border: 1px solid #E2E8F0;
             }
             .system-error {
-                color: #ED4245;
+                background-color: #FEF2F2;
+                border: 1px solid #FECACA;
+                color: #DC2626;
                 font-weight: bold;
-            }
-            .file-card {
-                display: inline-block;
-                background-color: #232428;
-                border: 1px dashed #5865F2;
-                padding: 8px 12px;
-                border-radius: 8px;
-                margin-top: 4px;
             }
         """;
         editorKit.getStyleSheet().addRule(css);
@@ -114,6 +110,7 @@ public class ChatHistoryPanel extends JPanel {
 
         scrollPane = new JScrollPane(textPane);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.getViewport().setBackground(new Color(248, 250, 252));
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         add(scrollPane, BorderLayout.CENTER);
     }
@@ -134,10 +131,10 @@ public class ChatHistoryPanel extends JPanel {
         SwingUtilities.invokeLater(() -> {
             try {
                 String errorClass = isError ? " system-error" : "";
-                String icon = isError ? "⚠️ " : "ℹ️ ";
+                String badge = isError ? "● " : "● ";
                 String html = String.format(
                         "<div class='system-msg'><span class='system-bubble%s'>%s%s</span></div>",
-                        errorClass, icon, escapeHtml(text)
+                        errorClass, badge, escapeHtml(text)
                 );
                 editorKit.insertHTML(document, document.getLength(), html, 0, 0, null);
                 scrollToBottom();
@@ -150,7 +147,7 @@ public class ChatHistoryPanel extends JPanel {
     private String buildMessageHtml(Message msg) {
         String safeContent = escapeHtml(msg.getContent()).replace("\n", "<br>");
         String time = msg.getFormattedTime();
-        String lockIcon = msg.isEncrypted() ? " 🔒" : "";
+        String lockBadge = msg.isEncrypted() ? " [E2EE]" : "";
 
         if (msg.isMine()) {
             return String.format(
@@ -160,7 +157,7 @@ public class ChatHistoryPanel extends JPanel {
                     "    <div class='msg-meta msg-meta-me'>%s%s</div>" +
                     "  </div>" +
                     "</div>",
-                    safeContent, time, lockIcon
+                    safeContent, time, lockBadge
             );
         } else {
             return String.format(
@@ -171,7 +168,7 @@ public class ChatHistoryPanel extends JPanel {
                     "    <div class='msg-meta'>%s%s</div>" +
                     "  </div>" +
                     "</div>",
-                    escapeHtml(msg.getSender()), safeContent, time, lockIcon
+                    escapeHtml(msg.getSender()), safeContent, time, lockBadge
             );
         }
     }
