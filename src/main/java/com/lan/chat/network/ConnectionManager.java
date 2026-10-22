@@ -165,7 +165,14 @@ public class ConnectionManager {
      */
     private void handlePeerDiscovered(Peer peer) {
         peer.setAutoDiscovered(true);
+        peer.setOnline(true);
         registerOrUpdatePeer(peer);
+
+        for (ConnectionListener l : listeners) {
+            try {
+                l.onPeerDiscovered(peer);
+            } catch (Exception ignored) {}
+        }
 
         // Auto-connect mesh logic (connect if not already connected and deterministic tie-breaker)
         String myKey = getMyAddressKey();
@@ -173,6 +180,12 @@ public class ConnectionManager {
 
         if (!connectedPeers.containsKey(peerKey) && myKey.compareTo(peerKey) < 0) {
             connectToPeer(peer.getIp(), peer.getPort());
+        }
+    }
+
+    public void triggerRescan() {
+        if (discoveryService != null) {
+            discoveryService.broadcastBeacon();
         }
     }
 

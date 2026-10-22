@@ -19,6 +19,7 @@ public class OnlinePeersPanel extends JPanel {
     private Consumer<ChatTarget> onTargetSelected;
     private Consumer<Peer> onPeerConnectRequest;
     private Runnable onCreateRoomRequested;
+    private Runnable onRescanRequested;
 
     private final JLabel lblPeerCount = new JLabel("(0 online)");
 
@@ -49,7 +50,23 @@ public class OnlinePeersPanel extends JPanel {
         leftHeader.add(titleLabel);
         leftHeader.add(lblPeerCount);
 
-        JButton btnCreateRoom = new JButton("➕ Tạo nhóm");
+        JPanel rightHeader = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        rightHeader.setOpaque(false);
+
+        JButton btnRescan = new JButton("🔄 Quét");
+        btnRescan.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        btnRescan.setBackground(new Color(241, 245, 249));
+        btnRescan.setForeground(new Color(71, 85, 105));
+        btnRescan.setFocusPainted(false);
+        btnRescan.setToolTipText("Quét tìm lại các thiết bị online trong mạng LAN");
+        btnRescan.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+        btnRescan.addActionListener(e -> {
+            if (onRescanRequested != null) {
+                onRescanRequested.run();
+            }
+        });
+
+        JButton btnCreateRoom = new JButton("➕ Nhóm");
         btnCreateRoom.setFont(new Font("Segoe UI", Font.BOLD, 11));
         btnCreateRoom.setBackground(new Color(79, 70, 229));
         btnCreateRoom.setForeground(Color.WHITE);
@@ -62,8 +79,11 @@ public class OnlinePeersPanel extends JPanel {
             }
         });
 
+        rightHeader.add(btnRescan);
+        rightHeader.add(btnCreateRoom);
+
         headerPanel.add(leftHeader, BorderLayout.WEST);
-        headerPanel.add(btnCreateRoom, BorderLayout.EAST);
+        headerPanel.add(rightHeader, BorderLayout.EAST);
         add(headerPanel, BorderLayout.NORTH);
 
         // Always put General Room (All LAN) as top item
@@ -132,6 +152,10 @@ public class OnlinePeersPanel extends JPanel {
 
     public void setOnCreateRoomRequested(Runnable onCreateRoomRequested) {
         this.onCreateRoomRequested = onCreateRoomRequested;
+    }
+
+    public void setOnRescanRequested(Runnable onRescanRequested) {
+        this.onRescanRequested = onRescanRequested;
     }
 
     public ChatTarget getSelectedTarget() {

@@ -213,6 +213,10 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         peersPanel = new OnlinePeersPanel();
         peersPanel.setOnTargetSelected(this::switchChatTarget);
         peersPanel.setOnCreateRoomRequested(this::showCreateRoomDialog);
+        peersPanel.setOnRescanRequested(() -> {
+            connectionManager.triggerRescan();
+            chatHistoryPanel.appendSystem("🔄 Đang phát tín hiệu tìm kiếm thiết bị trong mạng LAN...", false);
+        });
         peersPanel.setOnPeerConnectRequest(peer -> {
             txtTargetIp.setText(peer.getIp());
             txtTargetPort.setText(String.valueOf(peer.getPort()));
@@ -785,6 +789,14 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     // ==========================================
     // ConnectionListener Callbacks
     // ==========================================
+
+    @Override
+    public void onPeerDiscovered(Peer peer) {
+        SwingUtilities.invokeLater(() -> {
+            peersPanel.addOrUpdatePeer(peer);
+            chatHistoryPanel.appendSystem("🔍 Phát hiện thiết bị LAN: " + peer.getNickname() + " [" + peer.getIp() + ":" + peer.getPort() + "]", false);
+        });
+    }
 
     @Override
     public void onConnected(Peer peer) {

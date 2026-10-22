@@ -1,18 +1,22 @@
 package com.lan.chat.network;
 
 import com.lan.chat.model.Peer;
+import com.lan.chat.util.NetworkUtil;
 
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * UDP Auto-Discovery Service optimized for Multi-Machine LAN operation.
- * - Broadcasts using Multicast (239.255.10.10:8888), Subnet Broadcast, and Direct Unicast ACK.
- * - Uses unique instanceId to differentiate nodes even when both machines listen on port 5000!
- * - Works across different PCs in LAN (Wi-Fi/Ethernet) and multiple local test instances.
+ * UDP Auto-Discovery Service robustly tuned for Multi-Machine LAN operation.
+ * - Broadcasts using:
+ *   1. Direct physical subnet broadcasts (e.g. 192.168.1.255, 10.x.x.255) per interface.
+ *   2. Global broadcast (255.255.255.255).
+ *   3. Multicast group (239.255.10.10:8888).
+ *   4. Direct unicast ACK replies.
  */
 public class UdpDiscoveryService {
 
@@ -54,9 +58,10 @@ public class UdpDiscoveryService {
             groupAddress = InetAddress.getByName(MULTICAST_GROUP_IP);
             socket = new MulticastSocket(DISCOVERY_PORT);
             socket.setReuseAddress(true);
-            socket.setTimeToLive(16); // Allow traversing subnets
+            socket.setBroadcast(true); // Crucial for broadcast transmission without permission error!
+            socket.setTimeToLive(16);
 
-            // Join multicast group on all valid active non-loopback network interfaces
+            // Join multicast group across all multicast-capable interfaces
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 NetworkInterface ni = interfaces.nextElement();
@@ -67,22 +72,17 @@ public class UdpDiscoveryService {
                 }
             }
 
-            // Also join default
-            try {
-                socket.joinGroup(groupAddress);
-            } catch (Exception ignored) {}
-
-            // Start listener thread
+            // Start background receiver listener thread
             listenerThread = new Thread(this::listenLoop, "UdpDiscovery-Listener");
             listenerThread.setDaemon(true);
             listenerThread.start();
 
-            // Start periodic beacon thread
+            // Start periodic beacon thread (beacons every 2 seconds)
             beaconThread = new Thread(this::beaconLoop, "UdpDiscovery-Beacon");
             beaconThread.setDaemon(true);
             beaconThread.start();
 
-            // Send initial broadcast
+            // Broadcast initial beacon immediately
             broadcastBeacon();
 
         } catch (Exception e) {
@@ -94,56 +94,61 @@ public class UdpDiscoveryService {
         while (running) {
             try {
                 broadcastBeacon();
-                Thread.sleep(2500); // Beacon every 2.5s for fast multi-machine discovery
+                Thread.sleep(2000); // Send beacon every 2s
             } catch (InterruptedException e) {
                 break;
             } catch (Exception ignored) {}
         }
     }
 
+    /**
+     * Broadcasts discovery beacon across all network interfaces, subnets, and multicast group.
+     */
     public void broadcastBeacon() {
-        if (socket == null || socket.isClosed()) return;
+        if (!running) return;
         try {
             // Syntax: LAN_CHAT_DISCOVER|instanceId|nickname|tcpPort|voiceUdpPort
             String payload = String.format("%s|%s|%s|%d|%d", PACKET_DISCOVER, instanceId, nickname, tcpPort, voiceUdpPort);
             byte[] data = payload.getBytes(StandardCharsets.UTF_8);
 
-            // 1. Send to Multicast Group
-            DatagramPacket mPacket = new DatagramPacket(data, data.length, groupAddress, DISCOVERY_PORT);
-            socket.send(mPacket);
-
-            // 2. Broadcast to all subnet broadcast addresses (essential for Wi-Fi routers that filter multicast)
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                NetworkInterface ni = interfaces.nextElement();
-                if (ni.isLoopback() || !ni.isUp()) continue;
-                for (InterfaceAddress ifAddr : ni.getInterfaceAddresses()) {
-                    InetAddress broadcast = ifAddr.getBroadcast();
-                    if (broadcast != null) {
-                        try {
-                            DatagramPacket bPacket = new DatagramPacket(data, data.length, broadcast, DISCOVERY_PORT);
-                            socket.send(bPacket);
-                        } catch (Exception ignored) {}
-                    }
-                }
+            // 1. Broadcast specifically out of each active network interface
+            List<NetworkUtil.BroadcastTarget> targets = NetworkUtil.getBroadcastTargets();
+            for (NetworkUtil.BroadcastTarget target : targets) {
+                try (DatagramSocket senderSock = new DatagramSocket(new InetSocketAddress(target.localAddress(), 0))) {
+                    senderSock.setBroadcast(true);
+                    DatagramPacket bPacket = new DatagramPacket(data, data.length, target.broadcastAddress(), DISCOVERY_PORT);
+                    senderSock.send(bPacket);
+                } catch (Exception ignored) {}
             }
 
-            // 3. Global broadcast fallback
-            try {
-                InetAddress globalBcast = InetAddress.getByName("255.255.255.255");
-                socket.send(new DatagramPacket(data, data.length, globalBcast, DISCOVERY_PORT));
-            } catch (Exception ignored) {}
+            // 2. Global broadcast fallback (255.255.255.255)
+            if (socket != null && !socket.isClosed()) {
+                try {
+                    InetAddress globalBcast = InetAddress.getByName("255.255.255.255");
+                    DatagramPacket gPacket = new DatagramPacket(data, data.length, globalBcast, DISCOVERY_PORT);
+                    socket.send(gPacket);
+                } catch (Exception ignored) {}
+            }
+
+            // 3. Multicast group
+            if (socket != null && !socket.isClosed() && groupAddress != null) {
+                try {
+                    DatagramPacket mPacket = new DatagramPacket(data, data.length, groupAddress, DISCOVERY_PORT);
+                    socket.send(mPacket);
+                } catch (Exception ignored) {}
+            }
 
         } catch (Exception ignored) {}
     }
 
     private void sendUnicastAck(InetAddress targetAddress, int targetPort) {
-        if (socket == null || socket.isClosed()) return;
         try {
             String payload = String.format("%s|%s|%s|%d|%d", PACKET_ACK, instanceId, nickname, tcpPort, voiceUdpPort);
             byte[] data = payload.getBytes(StandardCharsets.UTF_8);
-            DatagramPacket p = new DatagramPacket(data, data.length, targetAddress, DISCOVERY_PORT);
-            socket.send(p);
+            try (DatagramSocket directSock = new DatagramSocket()) {
+                DatagramPacket p = new DatagramPacket(data, data.length, targetAddress, targetPort);
+                directSock.send(p);
+            }
         } catch (Exception ignored) {}
     }
 
@@ -187,16 +192,18 @@ public class UdpDiscoveryService {
             return;
         }
 
-        // Drop packets originating from OUR OWN instance!
+        // Drop packets originating from our own process instance
         if (this.instanceId.equals(senderId)) {
             return;
         }
 
         Peer peer = new Peer(senderIp, peerTcpPort, peerNick);
         peer.setVoiceUdpPort(peerVoicePort);
+        peer.setAutoDiscovered(true);
+        peer.setOnline(true);
 
         if (PACKET_DISCOVER.equals(header)) {
-            // Reply with Unicast ACK directly to sender so both machines discover each other instantly!
+            // Reply with direct Unicast ACK so both machines discover each other instantly
             sendUnicastAck(senderAddress, DISCOVERY_PORT);
 
             if (onPeerDiscovered != null) {
@@ -226,9 +233,8 @@ public class UdpDiscoveryService {
 
         if (socket != null && !socket.isClosed()) {
             try {
-                socket.leaveGroup(groupAddress);
+                socket.close();
             } catch (Exception ignored) {}
-            socket.close();
         }
 
         if (listenerThread != null) listenerThread.interrupt();

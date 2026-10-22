@@ -4,6 +4,7 @@ import com.lan.chat.model.FileTransferTask;
 import com.lan.chat.model.Peer;
 
 public interface ConnectionListener {
+    default void onPeerDiscovered(Peer peer) {}
     void onConnected(Peer peer);
     void onDisconnected(Peer peer, String reason);
     void onMessageReceived(Peer peer, String text, boolean isEncrypted, boolean isGroup);
