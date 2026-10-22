@@ -34,6 +34,10 @@ public class Message {
         return new Message(sender, fileName + "|" + durationSeconds, MessageType.VOICE_NOTE, isMine, false);
     }
 
+    public static Message fileTransfer(String sender, String fileId, String fileName, long fileSize, boolean isMine) {
+        return new Message(sender, fileId + "|" + fileName + "|" + fileSize, MessageType.FILE_TRANSFER, isMine, false);
+    }
+
     public static Message systemInfo(String text) {
         return new Message("Hệ thống", text, MessageType.SYSTEM_INFO, false, false);
     }

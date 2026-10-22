@@ -79,6 +79,31 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
     private JButton btnVoiceRecord;
     private JButton btnCancelRecord;
 
+    // File Offer Tracking
+    public static class FileOfferInfo {
+        private final Peer peer;
+        private final String fileId;
+        private final String fileName;
+        private final long totalSize;
+        private final String channelType;
+
+        public FileOfferInfo(Peer peer, String fileId, String fileName, long totalSize, String channelType) {
+            this.peer = peer;
+            this.fileId = fileId;
+            this.fileName = fileName;
+            this.totalSize = totalSize;
+            this.channelType = channelType;
+        }
+
+        public Peer getPeer() { return peer; }
+        public String getFileId() { return fileId; }
+        public String getFileName() { return fileName; }
+        public long getTotalSize() { return totalSize; }
+        public String getChannelType() { return channelType; }
+    }
+
+    private final Map<String, FileOfferInfo> activeFileOffers = new ConcurrentHashMap<>();
+
     // Input Controls
     private JTextField txtMessageInput;
     private JButton btnSend;
@@ -321,6 +346,7 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
         chatHistoryPanel = new ChatHistoryPanel();
         chatHistoryPanel.setOnAudioPlayRequested(this::handlePlayVoiceNote);
+        chatHistoryPanel.setOnFileDownloadRequested(this::handleDownloadOfferedFile);
 
         // Upgraded FileTransferBar with Resume and Pause actions
         fileTransferBar = new FileTransferBar();
@@ -558,6 +584,14 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
         return "PEER_" + ChatStorageManager.sanitizeFileName(name);
     }
 
+    private ChatRoom findRoomById(String roomId) {
+        if (roomId == null) return null;
+        for (ChatRoom r : chatStorageManager.loadRooms()) {
+            if (roomId.equals(r.getId())) return r;
+        }
+        return null;
+    }
+
     private String getActiveChannelKey() {
         return activeTarget != null ? activeTarget.getKey() : GROUP_CHANNEL;
     }
@@ -749,18 +783,49 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
     private void chooseAndSendFile() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Chọn file để gửi qua mạng LAN (Hỗ trợ GB & Resume)");
+        chooser.setDialogTitle("Chọn file để gửi qua mạng LAN (Hỗ trợ GB & Tải đồng thời)");
         int res = chooser.showOpenDialog(this);
-        if (res == JFileChooser.APPROVE_OPTION) {
-            File file = chooser.getSelectedFile();
-            if (file != null && file.exists()) {
-                FileTransferTask task = connectionManager.sendFileToPeer(getActivePeer(), file);
-                if (task != null) {
-                    fileTransferBar.updateTask(task);
-                    chatHistoryPanel.appendSystem("Đã gửi lời mời truyền file: " + file.getName()
-                            + " (" + NetworkUtil.formatBytes(file.length()) + ")", false);
-                }
+        if (res != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File file = chooser.getSelectedFile();
+        if (file == null || !file.exists()) {
+            return;
+        }
+
+        String fileId;
+        String channelKey;
+        String myPrefix;
+
+        if (activeTarget.isAllLan()) {
+            fileId = connectionManager.broadcastFileOffer(file, "ALL");
+            channelKey = GROUP_CHANNEL;
+            myPrefix = "Bạn [Chung]";
+        } else if (activeTarget.isRoom()) {
+            ChatRoom room = activeTarget.getRoom();
+            fileId = connectionManager.sendRoomFileOffer(room, file);
+            channelKey = activeTarget.getKey();
+            myPrefix = "Bạn [" + room.getName() + "]";
+        } else {
+            Peer p = activeTarget.getPeer();
+            fileId = connectionManager.sendPeerFileOffer(p, file);
+            channelKey = activeTarget.getKey();
+            myPrefix = "Bạn [Chat riêng]";
+        }
+
+        if (fileId != null) {
+            Message msg = Message.fileTransfer(myPrefix, fileId, file.getName(), file.length(), true);
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
+            history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
             }
+            chatHistoryPanel.appendSystem("Đã chia sẻ file: " + file.getName() + " (" + NetworkUtil.formatBytes(file.length()) + ") lên cuộc trò chuyện.", false);
+        } else {
+            chatHistoryPanel.appendSystem("Chưa thể gửi file! Hãy đảm bảo đã kết nối tới thiết bị đối phương.", true);
         }
     }
 
@@ -865,35 +930,115 @@ public class MainChatFrame extends JFrame implements ConnectionListener {
 
     @Override
     public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {
+        onFileOfferReceived(peer, fileId, fileName, totalSize, "ALL");
+    }
+
+    @Override
+    public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize, String channelType) {
+        activeFileOffers.put(fileId, new FileOfferInfo(peer, fileId, fileName, totalSize, channelType));
+
         SwingUtilities.invokeLater(() -> {
-            String sizeStr = NetworkUtil.formatBytes(totalSize);
-            File downloadDir = new File(System.getProperty("user.home"), "Downloads");
-            File partFile = new File(downloadDir, fileName + ".part");
-            String resumeInfo = "";
-            if (partFile.exists() && partFile.length() > 0) {
-                resumeInfo = "\n(Phát hiện file dở dang: " + NetworkUtil.formatBytes(partFile.length()) + " -> Sẽ tự động Nối tiếp!)";
-            }
+            String channelKey;
+            String senderPrefix;
 
-            int choice = JOptionPane.showConfirmDialog(
-                    this,
-                    "Đối phương " + peer.getNickname() + " gửi file:\n"
-                            + fileName + " (" + sizeStr + ")" + resumeInfo + "\nBạn có muốn nhận không?",
-                    "Yêu cầu nhận file qua LAN",
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.QUESTION_MESSAGE
-            );
-
-            if (choice == JOptionPane.YES_OPTION) {
-                FileTransferTask task = connectionManager.acceptIncomingFile(peer, fileId, fileName, totalSize);
-                if (task != null) {
-                    fileTransferBar.updateTask(task);
-                    chatHistoryPanel.appendSystem("Bắt đầu tải file: " + fileName, false);
-                }
+            if (channelType != null && channelType.startsWith("ROOM_")) {
+                String roomId = channelType.substring("ROOM_".length());
+                channelKey = "ROOM_" + roomId;
+                ChatRoom room = findRoomById(roomId);
+                senderPrefix = peer.getNickname() + (room != null ? " [" + room.getName() + "]" : " [Phòng]");
+            } else if ("PRIVATE".equalsIgnoreCase(channelType)) {
+                channelKey = getChannelKeyForPeer(peer);
+                senderPrefix = peer.getNickname() + " [Chat riêng]";
             } else {
-                connectionManager.rejectIncomingFile(peer, fileId, "Người nhận đã từ chối.");
-                chatHistoryPanel.appendSystem("Đã từ chối nhận file: " + fileName, false);
+                channelKey = GROUP_CHANNEL;
+                senderPrefix = peer.getNickname() + " [Chung]";
             }
+
+            Message msg = Message.fileTransfer(senderPrefix, fileId, fileName, totalSize, false);
+            List<Message> history = conversationHistories.computeIfAbsent(channelKey, k -> new CopyOnWriteArrayList<>(chatStorageManager.loadMessages(channelKey)));
+            history.add(msg);
+            chatStorageManager.appendMessage(channelKey, msg);
+
+            if (getActiveChannelKey().equals(channelKey)) {
+                chatHistoryPanel.appendMessage(msg);
+            } else {
+                if (channelKey.startsWith("ROOM_")) {
+                    String roomId = channelKey.substring("ROOM_".length());
+                    for (ChatRoom r : chatStorageManager.loadRooms()) {
+                        if (r.getId().equals(roomId)) {
+                            r.incrementUnread();
+                            peersPanel.addOrUpdateRoom(r);
+                            break;
+                        }
+                    }
+                } else if (!channelKey.equals(GROUP_CHANNEL)) {
+                    peer.incrementUnread();
+                    peersPanel.refreshList();
+                }
+            }
+
+            chatHistoryPanel.appendSystem("Nhận được file chia sẻ: " + fileName + " ("
+                    + NetworkUtil.formatBytes(totalSize) + ") từ " + peer.getNickname()
+                    + ". Nhấn nút '⬇ Tải file về máy' trong khung chat để nhận file.", false);
         });
+    }
+
+    private void handleDownloadOfferedFile(String fileId) {
+        FileOfferInfo offer = activeFileOffers.get(fileId);
+        if (offer == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Không tìm thấy phiên chia sẻ cho file này hoặc đây là file do máy này gửi lên.",
+                    "Thông báo tải file",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Chọn vị trí lưu file: " + offer.getFileName());
+        File downloadDir = new File(System.getProperty("user.home"), "Downloads");
+        if (!downloadDir.exists()) {
+            downloadDir = new File(System.getProperty("user.home"));
+        }
+        chooser.setCurrentDirectory(downloadDir);
+        chooser.setSelectedFile(new File(downloadDir, offer.getFileName()));
+
+        int res = chooser.showSaveDialog(this);
+        if (res != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File targetFile = chooser.getSelectedFile();
+        if (targetFile == null) return;
+
+        if (targetFile.exists()) {
+            int overwrite = JOptionPane.showConfirmDialog(
+                    this,
+                    "File '" + targetFile.getName() + "' đã tồn tại.\nBạn có muốn ghi đè lên file này không?",
+                    "Xác nhận ghi đè file",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE
+            );
+            if (overwrite != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+
+        chatHistoryPanel.appendSystem("Bắt đầu tải file: " + offer.getFileName()
+                + " (" + NetworkUtil.formatBytes(offer.getTotalSize()) + ") về: " + targetFile.getAbsolutePath(), false);
+
+        FileTransferTask task = connectionManager.acceptIncomingFile(
+                offer.getPeer(),
+                offer.getFileId(),
+                offer.getFileName(),
+                offer.getTotalSize(),
+                targetFile
+        );
+
+        if (task != null) {
+            fileTransferBar.updateTask(task);
+        } else {
+            chatHistoryPanel.appendSystem("Không thể kết nối tới người gửi (" + offer.getPeer().getNickname() + ") để tải file.", true);
+        }
     }
 
     @Override

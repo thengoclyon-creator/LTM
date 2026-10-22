@@ -319,9 +319,9 @@ public class ConnectionManager {
             }
 
             @Override
-            public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {
+            public void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize, String channelType) {
                 AudioNotifier.playMessageTing();
-                for (ConnectionListener l : listeners) l.onFileOfferReceived(peer, fileId, fileName, totalSize);
+                for (ConnectionListener l : listeners) l.onFileOfferReceived(peer, fileId, fileName, totalSize, channelType);
             }
 
             @Override
@@ -580,13 +580,60 @@ public class ConnectionManager {
         return conn.offerFile(file);
     }
 
+    public String broadcastFileOffer(File file, String channelType) {
+        if (file == null || !file.exists()) return null;
+        if (connectedPeers.isEmpty()) {
+            broadcastLog("Chưa kết nối với thiết bị nào để chia sẻ file!", true);
+            return null;
+        }
+
+        String fileId = System.currentTimeMillis() + "_" + Math.abs(file.getName().hashCode());
+        boolean anySent = false;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected()) {
+                conn.offerFile(file, channelType, fileId);
+                anySent = true;
+            }
+        }
+        return anySent ? fileId : null;
+    }
+
+    public String sendRoomFileOffer(ChatRoom room, File file) {
+        if (file == null || !file.exists() || room == null) return null;
+        String fileId = System.currentTimeMillis() + "_" + Math.abs(file.getName().hashCode());
+        boolean anySent = false;
+        for (PeerConnection conn : connectedPeers.values()) {
+            if (conn.isConnected() && room.hasMember(conn.getPeer().getNickname())) {
+                conn.offerFile(file, "ROOM_" + room.getId(), fileId);
+                anySent = true;
+            }
+        }
+        return anySent ? fileId : null;
+    }
+
+    public String sendPeerFileOffer(Peer peer, File file) {
+        if (file == null || !file.exists()) return null;
+        PeerConnection conn = getPeerConnectionByPeer(peer);
+        if (conn == null || !conn.isConnected()) {
+            broadcastLog("Không có kết nối tới " + (peer != null ? peer.getNickname() : "đối phương"), true);
+            return null;
+        }
+        String fileId = System.currentTimeMillis() + "_" + Math.abs(file.getName().hashCode());
+        conn.offerFile(file, "PRIVATE", fileId);
+        return fileId;
+    }
+
     public FileTransferTask acceptIncomingFile(Peer peer, String fileId, String fileName, long totalSize) {
+        return acceptIncomingFile(peer, fileId, fileName, totalSize, null);
+    }
+
+    public FileTransferTask acceptIncomingFile(Peer peer, String fileId, String fileName, long totalSize, File destination) {
         PeerConnection conn = getPeerConnectionByPeer(peer);
         if (conn == null && !connectedPeers.isEmpty()) {
             conn = connectedPeers.values().iterator().next();
         }
         if (conn != null) {
-            return conn.acceptFileOffer(fileId, fileName, totalSize);
+            return conn.acceptFileOffer(fileId, fileName, totalSize, destination);
         }
         return null;
     }

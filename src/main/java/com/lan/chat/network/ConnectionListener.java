@@ -11,7 +11,10 @@ public interface ConnectionListener {
     default void onMessageReceived(Peer peer, String text, boolean isEncrypted) {
         onMessageReceived(peer, text, isEncrypted, true);
     }
-    void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize);
+    default void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize) {
+        onFileOfferReceived(peer, fileId, fileName, totalSize, "ALL");
+    }
+    default void onFileOfferReceived(Peer peer, String fileId, String fileName, long totalSize, String channelType) {}
     void onFileProgress(FileTransferTask task);
     void onFileCompleted(FileTransferTask task, boolean success, String message);
     default void onVoiceNoteReceived(Peer peer, String fileName, int durationSeconds, byte[] audioData, boolean isGroup) {}

@@ -233,8 +233,9 @@ public class PeerConnection {
         String fileId = dis.readUTF();
         String fileName = dis.readUTF();
         long totalSize = dis.readLong();
+        String channelType = dis.readUTF();
 
-        listener.onFileOfferReceived(peer, fileId, fileName, totalSize);
+        listener.onFileOfferReceived(peer, fileId, fileName, totalSize, channelType);
     }
 
     private void handleFileAccept() throws IOException {
@@ -581,10 +582,9 @@ public class PeerConnection {
     /**
      * Offer a file for transfer to peer.
      */
-    public FileTransferTask offerFile(File file) {
+    public FileTransferTask offerFile(File file, String channelType, String fileId) {
         if (!isConnected() || file == null || !file.exists()) return null;
 
-        String fileId = System.currentTimeMillis() + "_" + Math.abs(file.getName().hashCode());
         FileTransferTask task = new FileTransferTask(fileId, file.getName(), file.length(), true, file);
         activeTasks.put(fileId, task);
 
@@ -594,9 +594,9 @@ public class PeerConnection {
                 dos.writeUTF(fileId);
                 dos.writeUTF(file.getName());
                 dos.writeLong(file.length());
+                dos.writeUTF(channelType != null ? channelType : "ALL");
                 dos.flush();
             }
-            listener.onStatusLog("Đang mời " + peer.getNickname() + " nhận file: " + file.getName(), false);
             return task;
         } catch (IOException e) {
             activeTasks.remove(fileId);
@@ -605,13 +605,23 @@ public class PeerConnection {
         }
     }
 
+    public FileTransferTask offerFile(File file) {
+        String fileId = System.currentTimeMillis() + "_" + Math.abs(file.getName().hashCode());
+        return offerFile(file, "ALL", fileId);
+    }
+
     /**
      * Accept incoming file offer (with automatic Resume check!).
      */
     public FileTransferTask acceptFileOffer(String fileId, String fileName, long totalSize) {
+        File downloadDir = new File(System.getProperty("user.home"), "Downloads");
+        return acceptFileOffer(fileId, fileName, totalSize, new File(downloadDir, fileName));
+    }
+
+    public FileTransferTask acceptFileOffer(String fileId, String fileName, long totalSize, File destinationFile) {
         if (!isConnected()) return null;
 
-        File targetFile = new File(downloadFolder, fileName);
+        File targetFile = destinationFile != null ? destinationFile : new File(downloadFolder, fileName);
         File partFile = new File(targetFile.getAbsolutePath() + ".part");
 
         long existingBytes = 0;

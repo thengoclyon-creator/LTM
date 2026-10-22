@@ -14,9 +14,14 @@ public class ChatHistoryPanel extends JPanel {
     private final HTMLDocument document;
     private final JScrollPane scrollPane;
     private java.util.function.Consumer<String> onAudioPlayRequested;
+    private java.util.function.Consumer<String> onFileDownloadRequested;
 
     public void setOnAudioPlayRequested(java.util.function.Consumer<String> onAudioPlayRequested) {
         this.onAudioPlayRequested = onAudioPlayRequested;
+    }
+
+    public void setOnFileDownloadRequested(java.util.function.Consumer<String> onFileDownloadRequested) {
+        this.onFileDownloadRequested = onFileDownloadRequested;
     }
 
     public ChatHistoryPanel() {
@@ -134,6 +139,34 @@ public class ChatHistoryPanel extends JPanel {
                 display: inline-block;
                 margin: 4px 0;
             }
+            .file-card-me {
+                background-color: #3730A3;
+                padding: 10px 14px;
+                border-radius: 10px;
+                color: #FFFFFF;
+                display: block;
+                margin: 4px 0;
+            }
+            .file-card-peer {
+                background-color: #F8FAFC;
+                border: 1px solid #CBD5E1;
+                padding: 10px 14px;
+                border-radius: 10px;
+                color: #1E293B;
+                display: block;
+                margin: 4px 0;
+            }
+            .file-download-btn {
+                background-color: #4F46E5;
+                color: #FFFFFF;
+                padding: 5px 12px;
+                border-radius: 6px;
+                text-decoration: none;
+                font-weight: bold;
+                font-size: 11px;
+                display: inline-block;
+                margin-top: 6px;
+            }
         """;
         editorKit.getStyleSheet().addRule(css);
 
@@ -144,6 +177,11 @@ public class ChatHistoryPanel extends JPanel {
                     String file = desc.substring(5);
                     if (onAudioPlayRequested != null) {
                         onAudioPlayRequested.accept(file);
+                    }
+                } else if (desc != null && desc.startsWith("download:")) {
+                    String fileId = desc.substring(9);
+                    if (onFileDownloadRequested != null) {
+                        onFileDownloadRequested.accept(fileId);
                     }
                 }
             }
@@ -221,6 +259,7 @@ public class ChatHistoryPanel extends JPanel {
         String lockBadge = msg.isEncrypted() ? " [E2EE]" : "";
 
         boolean isVoice = msg.getType() == com.lan.chat.model.MessageType.VOICE_NOTE;
+        boolean isFile = msg.getType() == com.lan.chat.model.MessageType.FILE_TRANSFER;
         String bodyHtml;
         if (isVoice) {
             String fileName = msg.getContent();
@@ -237,6 +276,41 @@ public class ChatHistoryPanel extends JPanel {
             } else {
                 bodyHtml = String.format("<a href='play:%s' class='voice-play-peer'>🎙️ &#9658; Tin nhắn thoại (%s)</a>",
                         escapeHtml(fileName), durStr);
+            }
+        } else if (isFile) {
+            String raw = msg.getContent();
+            String fileId = "";
+            String fileName = raw;
+            long fileSize = 0;
+            if (raw.contains("|")) {
+                String[] parts = raw.split("\\|");
+                if (parts.length >= 3) {
+                    fileId = parts[0];
+                    fileName = parts[1];
+                    try { fileSize = Long.parseLong(parts[2]); } catch (Exception ignored) {}
+                }
+            }
+            String sizeStr = com.lan.chat.util.NetworkUtil.formatBytes(fileSize);
+            if (msg.isMine()) {
+                bodyHtml = String.format(
+                        "<div class='file-card-me'>" +
+                        "  <div style='font-weight:bold; font-size:12px;'>📁 %s</div>" +
+                        "  <div style='font-size:11px; color:#C7D2FE; margin-top:2px;'>Dung lượng: %s</div>" +
+                        "  <div style='font-size:10px; color:#A5B4FC; margin-top:4px;'>Đang chia sẻ trên mạng LAN</div>" +
+                        "</div>",
+                        escapeHtml(fileName), sizeStr
+                );
+            } else {
+                bodyHtml = String.format(
+                        "<div class='file-card-peer'>" +
+                        "  <div style='font-weight:bold; font-size:12px; color:#0F172A;'>📁 %s</div>" +
+                        "  <div style='font-size:11px; color:#64748B; margin-top:2px;'>Dung lượng: %s</div>" +
+                        "  <div style='margin-top:6px;'>" +
+                        "    <a href='download:%s' class='file-download-btn'>⬇ Tải file về máy</a>" +
+                        "  </div>" +
+                        "</div>",
+                        escapeHtml(fileName), sizeStr, escapeHtml(fileId)
+                );
             }
         } else {
             bodyHtml = String.format("<div>%s</div>", safeContent);
